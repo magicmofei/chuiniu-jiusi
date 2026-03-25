@@ -239,7 +239,7 @@ export class CardGame extends GameEngine {
     };
   }
 
-  private aiMakeBid(player: Player, master: CardSuit, prevQty: number | null): { action: 'bid'; data: unknown } {
+  private aiMakeBid(player: Player, master: CardSuit, prevQty: number | null): { action: 'bid'; data: unknown } | { action: 'challenge' } {
     // 最低必须喊出的数量
     const minQty = prevQty !== null ? prevQty + 1 : 1;
     // 上限：手牌数 且 不超过规则上限3

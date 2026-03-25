@@ -14,6 +14,8 @@ import {
   ServerToClientEvents,
   DiceFace,
   GameMode,
+  findCharacter,
+  OpeningQuoteItem,
 } from './types';
 
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
@@ -240,13 +242,13 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
 
   // ── 加入/创建房间 ────────────────────────────────────────
   socket.on('room:join', (data, cb) => {
-    const { name, avatar, mode = 'dice', roomId: targetRoomId } = data;
+    const { name, avatar, mode = 'dice', roomId: targetRoomId, characterId } = data as any;
     if (!name?.trim()) {
       cb({ success: false, error: '请输入昵称' }); return;
     }
     const res = rm.joinRoom(
       socket.id, name.trim(), avatar || '🍶',
-      mode as GameMode, targetRoomId
+      mode as GameMode, targetRoomId, characterId
     );
     if (!res.success || !res.roomId) {
       cb({ success: false, error: res.error }); return;
@@ -300,6 +302,19 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
         yourHand: priv.hand,
       });
     });
+    // v2.0：广播开场名言序列
+    const openingQuotes: OpeningQuoteItem[] = room.players.map(p => {
+      const char = findCharacter(p.characterId ?? '');
+      return {
+        playerId: p.id,
+        playerName: p.name,
+        characterId: p.characterId ?? '',
+        characterName: char?.name ?? p.name,
+        quote: char?.quote ?? '',
+        quoteAction: char?.quoteAction ?? 'idle',
+      };
+    });
+    io.to(roomId).emit('game:openingQuotes', openingQuotes);
     console.log(`[开局] 房间 ${roomId} 第1回合开始（模式=${room.mode}）`);
 
     // 若第一个行动者是 AI，触发 AI
@@ -473,6 +488,19 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
         yourHand: priv.hand,
       });
     });
+    // v2.0：广播开场名言序列
+    const hostOpeningQuotes: OpeningQuoteItem[] = res.room.players.map(p => {
+      const char = findCharacter(p.characterId ?? '');
+      return {
+        playerId: p.id,
+        playerName: p.name,
+        characterId: p.characterId ?? '',
+        characterName: char?.name ?? p.name,
+        quote: char?.quote ?? '',
+        quoteAction: char?.quoteAction ?? 'idle',
+      };
+    });
+    io.to(res.roomId).emit('game:openingQuotes', hostOpeningQuotes);
     console.log(`[房主开局] 房间 ${res.roomId} 强制开始（${res.room.players.length}人）`);
 
     const firstPlayer = engine.getCurrentPlayer();

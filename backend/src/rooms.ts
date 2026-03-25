@@ -3,7 +3,7 @@
 // 负责：房间创建/加入/离开、6位房间码、断线重连、AI补位
 // ============================================================
 
-import { Room, Player, Spectator, GameMode, CardSuit, RoomPublicView, BottleState } from './types';
+import { Room, Player, Spectator, GameMode, CardSuit, RoomPublicView, BottleState, CharacterModel, CHARACTERS, AI_CHARACTER_IDS, findCharacter } from './types';
 import { DiceGame } from './gameEngine/DiceGame';
 import { CardGame } from './gameEngine/CardGame';
 import { GameEngine } from './gameEngine/base/GameEngine';
@@ -37,9 +37,11 @@ function createBottleState(): BottleState {
 
 // 创建 AI 玩家
 function createAIPlayer(index: number): Player {
+  const charId = AI_CHARACTER_IDS[index % AI_CHARACTER_IDS.length];
+  const char = findCharacter(charId);
   return {
     id: `AI_${index}_${Date.now()}`,
-    name: AI_NAMES[index % AI_NAMES.length],
+    name: char?.name ?? AI_NAMES[index % AI_NAMES.length],
     avatar: AI_AVATARS[index % AI_AVATARS.length],
     isAI: true,
     isConnected: true,
@@ -50,14 +52,19 @@ function createAIPlayer(index: number): Player {
     hand: [] as CardSuit[],
     bottles: createBottleState(),
     disconnectedAt: null,
+    characterId: charId,
+    characterModel: (char?.model ?? 'C') as CharacterModel,
   };
 }
 
 // 创建真实玩家
-function createPlayer(socketId: string, name: string, avatar: string): Player {
+function createPlayer(socketId: string, name: string, avatar: string, characterId?: string): Player {
+  const char = characterId ? findCharacter(characterId) : undefined;
+  // 若找不到对应人物，随机选一个
+  const resolvedChar = char ?? CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
   return {
     id: socketId,
-    name,
+    name: char ? char.name : name,  // 使用角色名（若提供了 characterId）
     avatar,
     isAI: false,
     isConnected: true,
@@ -68,6 +75,8 @@ function createPlayer(socketId: string, name: string, avatar: string): Player {
     hand: [] as CardSuit[],
     bottles: createBottleState(),
     disconnectedAt: null,
+    characterId: resolvedChar.id,
+    characterModel: resolvedChar.model as CharacterModel,
   };
 }
 
@@ -128,7 +137,8 @@ export class RoomManager {
     name: string,
     avatar: string,
     mode: GameMode = 'dice',
-    targetRoomId?: string
+    targetRoomId?: string,
+    characterId?: string
   ): { success: boolean; roomId?: string; error?: string; full?: boolean } {
     // 已在房间中
     if (this.socketRoom.has(socketId)) {
@@ -164,7 +174,7 @@ export class RoomManager {
       }
     }
 
-    const player = createPlayer(socketId, name, avatar);
+    const player = createPlayer(socketId, name, avatar, characterId);
     // 若房间有 AI 占位，替换最后一个 AI
     const aiIndex = room.players.findIndex(p => p.isAI);
     if (aiIndex >= 0) {
@@ -396,6 +406,8 @@ export class RoomManager {
         isReady: p.isReady, lives: p.lives,
         diceCount: p.diceCount, handCount: p.hand.length,
         disconnectedAt: p.disconnectedAt,
+        characterId: p.characterId ?? '',
+        characterModel: p.characterModel ?? 'A',
       })),
       phase: room.phase,
       round: room.round,

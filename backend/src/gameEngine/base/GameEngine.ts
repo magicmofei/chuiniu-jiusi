@@ -81,6 +81,8 @@ export abstract class GameEngine {
       diceCount: p.diceCount,
       handCount: p.hand.length,
       disconnectedAt: p.disconnectedAt,
+      characterId: p.characterId ?? '',
+      characterModel: p.characterModel ?? 'A',
     };
   }
 
