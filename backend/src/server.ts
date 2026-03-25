@@ -22,12 +22,34 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : ['*'];
 
+// 最大同时连接数（单进程）
+const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS) || 200;
+
 const app = express();
 app.use(cors({
   origin: ALLOWED_ORIGINS.includes('*') ? '*' : ALLOWED_ORIGINS,
   methods: ['GET', 'POST'],
 }));
-app.use(express.json());
+app.use(express.json({ limit: '16kb' }));
+
+// ── 简易速率限制（基于 IP，不依赖第三方包）──────────────────
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+function rateLimit(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || entry.resetAt < now) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 });
+    return next();
+  }
+  entry.count++;
+  if (entry.count > 120) {
+    res.status(429).json({ error: '请求过于频繁，请稍后再试' });
+    return;
+  }
+  next();
+}
+app.use(rateLimit);
 
 const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
@@ -37,14 +59,59 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   },
   // 断线重连配置
   connectionStateRecovery: { maxDisconnectionDuration: 6000 },
+  // 限制单连接最大 payload
+  maxHttpBufferSize: 1e5,
 });
 
 const rm = new RoomManager();
 
+// ── 定时清理过期房间（每5分钟）────────────────────────────
+setInterval(() => {
+  const cleaned = rm.cleanupStaleRooms();
+  if (cleaned > 0) console.log(`[GC] 清理了 ${cleaned} 个过期房间`);
+}, 5 * 60 * 1000);
+
+// ── 定时清理速率限制表（每10分钟）────────────────────────
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap.entries()) {
+    if (entry.resetAt < now) rateLimitMap.delete(ip);
+  }
+}, 10 * 60 * 1000);
+
 // ── REST 健康检查 ─────────────────────────────────────────
 app.get('/health', (_req, res) =>
-  res.json({ status: 'ok', time: new Date().toISOString() })
+  res.json({
+    status: 'ok',
+    time: new Date().toISOString(),
+    connections: io.engine.clientsCount,
+    rooms: rm.getAllRooms().length,
+  })
 );
+
+// ── 房间列表（大厅浏览用）────────────────────────────────
+app.get('/api/rooms', (_req, res) => {
+  const rooms = rm.getAllRooms()
+    .filter(r => r.phase !== 'gameOver')
+    .map(r => ({
+      roomId: r.roomId,
+      mode: r.mode,
+      phase: r.phase,
+      playerCount: r.players.length,
+      realPlayerCount: r.players.filter(p => !p.isAI).length,
+      maxPlayers: 4,
+      full: r.players.length >= 4 && !r.players.some(p => p.isAI),
+      spectatorCount: r.spectators.length,
+      round: r.round,
+    }))
+    .sort((a, b) => {
+      // 等待中房间排前面，再按真实玩家数降序
+      if (a.phase === 'waiting' && b.phase !== 'waiting') return -1;
+      if (b.phase === 'waiting' && a.phase !== 'waiting') return 1;
+      return b.realPlayerCount - a.realPlayerCount;
+    });
+  res.json({ rooms, total: rooms.length });
+});
 
 // ── 房间信息（分享链接预览用）────────────────────────────
 app.get('/api/room/:roomId', (req, res) => {
@@ -220,7 +287,19 @@ function scheduleAIPickBottle(roomId: string, playerId: string, delayMs = 1800):
 
 // ── Socket.io 主连接处理 ──────────────────────────────────
 io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>) => {
-  console.log(`[连接] ${socket.id}`);
+  // 超出最大连接数则拒绝
+  if (io.engine.clientsCount > MAX_CONNECTIONS) {
+    console.warn(`[拒绝连接] 当前连接数 ${io.engine.clientsCount} 超过上限 ${MAX_CONNECTIONS}`);
+    socket.emit('error', '服务器繁忙，请稍后再试');
+    socket.disconnect(true);
+    return;
+  }
+  console.log(`[连接] ${socket.id}（当前 ${io.engine.clientsCount} 连接）`);
+
+  // 单 socket 级别全局异常捕获（防止单客户端异常崩溃整个服务）
+  socket.on('error', (err) => {
+    console.error(`[Socket错误] ${socket.id}:`, err);
+  });
 
   // ── 观战加入 ──────────────────────────────────────────────
   socket.on('room:spectate', (data, cb) => {
@@ -257,6 +336,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     cb({ success: true, roomId: res.roomId, playerId: socket.id });
 
     const room = rm.getRoom(res.roomId)!;
+    rm.touchRoom(res.roomId);
     const view = rm.toPublicView(room);
     // 通知房间所有人（含自己）
     io.to(res.roomId).emit('room:update', view);
@@ -286,6 +366,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     io.to(roomId).emit('room:update', rm.toPublicView(room));
     console.log(`[准备] ${socket.id} 准备完毕，可开始=${canStart}`);
 
+    rm.touchRoom(roomId);
     if (!canStart) return;
 
     // 所有人准备 → 创建引擎 → 开始第一回合
@@ -562,10 +643,19 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
   });
 });
 
+// ── 全局异常捕获（防止未处理的 Promise 崩溃进程）────────
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+
 // ── 启动 ─────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3000;
 httpServer.listen(PORT, () => {
   console.log(`🍶 吹牛酒肆后端启动 → http://localhost:${PORT}`);
   console.log(`   支持模式：骰子(dice) | 扑克(card)`);
   console.log(`   断线重连：5秒内可恢复，超时AI接管`);
+  console.log(`   最大连接数：${MAX_CONNECTIONS}`);
 });

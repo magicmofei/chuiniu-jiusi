@@ -134,7 +134,7 @@ const props = defineProps<{ result: ChallengeResult }>();
 const emit  = defineEmits<{ close: [] }>();
 
 const canClose  = ref(false);
-const countdown = ref(5);
+const countdown = ref(3);
 
 type DPhase = 'idle'|'lift'|'drink'|'poisoned'|'safe';
 type CPhase = 'idle'|'lift'|'drink'|'reveal'|'poisoned'|'safe';
@@ -172,12 +172,12 @@ function runDiceAnim() {
 
 function runCardAnim() {
   const poi = props.result.type === 'card' && !!props.result.punishment?.poisoned;
-  setTimeout(() => { cPhase.value = 'lift';                           sound.bidConfirm();    },  600);
-  setTimeout(() => { cPhase.value = 'drink';                          sound.glassCrash();    }, 1600);
-  setTimeout(() => { cPhase.value = 'reveal';                         sound.rouletteClick(); }, 2800);
-  setTimeout(() => { cPhase.value = poi ? 'poisoned' : 'safe';
+  // Modal opens after drinking already played on the table — jump straight to reveal
+  setTimeout(() => { cPhase.value = 'reveal'; sound.rouletteClick(); }, 400);
+  setTimeout(() => {
+    cPhase.value = poi ? 'poisoned' : 'safe';
     if (poi) { sound.poisoned(); inkSplash(); } else { sound.guzheng(); fireConfetti(); }
-  }, 4300);
+  }, 1800);
 }
 
 let timer: ReturnType<typeof setInterval>;

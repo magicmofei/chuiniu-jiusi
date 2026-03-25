@@ -135,7 +135,7 @@ onMounted(async () => {
   // 若已在房间中，跳过
   if (store.roomId) { router.replace('/table'); return; }
   try {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+    const backendUrl = import.meta.env.VITE_BACKEND_URL ?? '';
     const res = await fetch(`${backendUrl}/api/room/${roomIdParam}`);
     if (res.ok) roomInfo.value = await res.json();
   } catch { /* 无法联网，继续显示错误 */ }

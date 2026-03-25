@@ -222,8 +222,21 @@ export const useGameStore = defineStore('game', () => {
       bottlePickPrompt.value = null;
       if (challengeResult.value?.type === 'card') {
         challengeResult.value = { ...challengeResult.value, punishment };
-        showPunishment.value = true;
+      } else {
+        // challengeResult 丢失时（如刷新），构造最小对象以显示弹窗
+        challengeResult.value = {
+          type: 'card',
+          challengerId: '', challengerName: '',
+          bidderId: '', bidderName: '',
+          bid: { playerId: '', playerName: '', quantity: 0, suit: 'huadiao' as any, actualCards: [] },
+          bidSuccess: false,
+          loserIds: [punishment.loserId], loserNames: [punishment.loserName],
+          loserId: punishment.loserId,
+          punishment,
+          room: room.value!,
+        } as any;
       }
+      showPunishment.value = true;
       if (punishment.poisoned)
         addLog(`${punishment.loserName} 喝到蒙汗药，${punishment.eliminated ? '被淘汰！' : '还剩 ' + punishment.livesRemaining + ' 命'}`);
       else

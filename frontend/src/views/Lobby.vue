@@ -48,6 +48,7 @@
         </div>
         <p v-if="store.errorMsg" class="text-red-400 text-xs mb-3 text-center">{{ store.errorMsg }}</p>
         <button @click="joinGame" :disabled="!name.trim()||joining" class="btn-gold w-full">{{ joining?'入座中...':'踏入酒肆' }}</button>
+        <button @click="showRoomList=true" class="w-full mt-2 py-2 rounded-lg border text-xs font-semibold tracking-wider transition-all" style="border-color:rgba(255,255,255,0.1);color:rgba(255,255,255,0.35)" >🏮 浏览所有酒肆</button>
       </div>
       <div v-else key="lobby" class="card-ink p-7 w-full max-w-md">
         <div class="flex items-center justify-between mb-5">
@@ -56,6 +57,7 @@
             <span class="text-xs px-3 py-1 rounded-full border font-mono tracking-widest" style="border-color:var(--jade);color:var(--jade)">{{ store.roomId }}</span>
             <button @click="copyRoomId" class="text-xs px-2 py-1 rounded border" style="border-color:rgba(255,255,255,0.15);opacity:0.6">{{ copied?'✓':'复制' }}</button>
             <button @click="shareRoom" class="text-xs px-2 py-1 rounded border" style="border-color:rgba(212,168,67,0.4);color:var(--gold)">🔗 分享</button>
+            <button @click="backToHome" class="text-xs px-2 py-1 rounded border opacity-50 hover:opacity-100" style="border-color:rgba(255,255,255,0.15)">← 退出</button>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-3 mb-5">
@@ -97,6 +99,50 @@
     </transition>
     <p class="mt-8 text-xs opacity-10 tracking-widest">宋·汴京酒楼 · 四人联机 · v2.0</p>
     <CharacterSelectPanel v-if="showCharPanel" :initial-id="store.selectedCharacter?.id" @select="onCharSelect" @close="showCharPanel=false" />
+
+    <!-- 房间列表弹窗 -->
+    <transition name="fade">
+      <div v-if="showRoomList" class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.85);backdrop-filter:blur(8px)" @click.self="showRoomList=false">
+        <div class="w-full max-w-md card-ink p-6 relative" style="max-height:80vh;overflow-y:auto">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="font-bold tracking-widest text-sm" style="color:var(--gold)">🏮 汴京酒肆列表</h2>
+            <div class="flex items-center gap-2">
+              <button @click="fetchRooms" class="text-xs opacity-40 hover:opacity-80" :class="roomListLoading?'animate-spin':''" title="刷新">↺</button>
+              <button @click="showRoomList=false" class="text-xs opacity-40 hover:opacity-100 text-lg">✕</button>
+            </div>
+          </div>
+          <div v-if="roomListLoading" class="text-center py-8 opacity-40 text-sm tracking-widest">查询中…</div>
+          <div v-else-if="roomList.length===0" class="text-center py-8">
+            <p class="text-3xl mb-3">🍃</p>
+            <p class="text-sm opacity-40 tracking-widest">暂无开放中的酒肆</p>
+            <button @click="joinGame" class="btn-gold mt-4 text-xs px-6">新开一桌</button>
+          </div>
+          <div v-else class="space-y-2">
+            <div v-for="r in roomList" :key="r.roomId"
+              class="flex items-center gap-3 rounded-xl p-3 border transition-all cursor-pointer hover:border-yellow-700/50"
+              :class="r.full ? 'border-white/5 opacity-60' : 'border-white/10 hover:bg-yellow-900/10'"
+              @click="quickJoin(r)"
+            >
+              <span class="text-xl flex-shrink-0">{{ r.mode==='card'?'🃏':'🎲' }}</span>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-xs tracking-widest" style="color:var(--gold)">{{ r.roomId }}</span>
+                  <span class="text-xs px-1.5 py-0.5 rounded" :style="phaseStyle(r.phase)">{{ phaseLabel(r.phase) }}</span>
+                </div>
+                <div class="flex items-center gap-2 mt-0.5">
+                  <span class="text-xs opacity-40">{{ r.mode==='card'?'酒令':'骰子' }}</span>
+                  <span class="text-xs opacity-40">·</span>
+                  <span class="text-xs" :style="r.realPlayerCount>=4?'color:var(--vermillion)':'color:var(--jade)'">{{ r.realPlayerCount }} / 4 人</span>
+                  <span v-if="r.spectatorCount>0" class="text-xs opacity-30">· {{ r.spectatorCount }} 观战</span>
+                  <span v-if="r.round>0" class="text-xs opacity-30">· 第{{ r.round }}回合</span>
+                </div>
+              </div>
+              <span class="text-xs flex-shrink-0" :style="r.full?'color:rgba(255,255,255,0.2)':'color:var(--jade)'">{{ r.full?'观战':'加入 →' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -115,6 +161,54 @@ const targetRoom   = ref('');
 const joining      = ref(false);
 const copied       = ref(false);
 const showCharPanel = ref(false);
+
+// ── 房间列表 ────────────────────────────────────────────────
+const showRoomList   = ref(false);
+const roomListLoading = ref(false);
+interface RoomSummary {
+  roomId: string; mode: string; phase: string;
+  playerCount: number; realPlayerCount: number;
+  maxPlayers: number; full: boolean;
+  spectatorCount: number; round: number;
+}
+const roomList = ref<RoomSummary[]>([]);
+
+async function fetchRooms() {
+  roomListLoading.value = true;
+  try {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL ?? '';
+    const res = await fetch(`${backendUrl}/api/rooms`);
+    if (res.ok) {
+      const data = await res.json();
+      roomList.value = data.rooms ?? [];
+    }
+  } catch { roomList.value = []; }
+  roomListLoading.value = false;
+}
+
+watch(showRoomList, (v) => { if (v) fetchRooms(); });
+
+function phaseLabel(phase: string) {
+  return ({ waiting: '等待中', ready: '即将开始', bidding: '游戏中', rolling: '游戏中', punishment: '游戏中', result: '游戏中', gameOver: '已结束' } as Record<string,string>)[phase] ?? phase;
+}
+function phaseStyle(phase: string) {
+  if (phase === 'waiting') return 'background:rgba(78,139,111,0.2);color:var(--jade)';
+  if (phase === 'gameOver') return 'background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.25)';
+  return 'background:rgba(212,168,67,0.15);color:var(--gold)';
+}
+function quickJoin(r: RoomSummary) {
+  if (!name.value.trim()) {
+    store.clearError();
+    // 若未填昵称，填入房间码并关闭弹窗让用户先填
+    targetRoom.value = r.roomId;
+    showRoomList.value = false;
+    return;
+  }
+  targetRoom.value = r.roomId;
+  mode.value = r.mode as GameMode;
+  showRoomList.value = false;
+  joinGame();
+}
 
 const charEmoji = computed(() => modelEmoji(store.selectedCharacter?.model));
 
@@ -159,6 +253,10 @@ async function shareRoom() {
   await navigator.clipboard.writeText(url).catch(() => {});
   copied.value = true;
   setTimeout(() => { copied.value = false; }, 2000);
+}
+
+function backToHome() {
+  store.disconnect();
 }
 
 watch(() => store.phase, (p) => {

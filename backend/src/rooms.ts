@@ -382,6 +382,37 @@ export class RoomManager {
     return this.rooms.get(roomId);
   }
 
+  // ── 房间列表（供大厅展示）────────────────────────────────
+  getAllRooms(): Room[] {
+    return Array.from(this.rooms.values());
+  }
+
+  // ── 清理已结束/空房间 ─────────────────────────────────────
+  cleanupStaleRooms(): number {
+    let count = 0;
+    const now = Date.now();
+    for (const [roomId, room] of this.rooms.entries()) {
+      const isEmpty = room.players.length === 0 ||
+        room.players.every(p => p.isAI);
+      const isGameOver = room.phase === 'gameOver';
+      // 空房间或游戏结束超过10分钟则清理
+      const stale = (isEmpty || isGameOver) &&
+        (now - (room as any)._lastActiveAt > 10 * 60 * 1000);
+      if (stale) {
+        this.rooms.delete(roomId);
+        this.engines.delete(roomId);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  // ── 更新房间活跃时间戳 ───────────────────────────────────
+  touchRoom(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (room) (room as any)._lastActiveAt = Date.now();
+  }
+
   getRoomBySocket(socketId: string): Room | undefined {
     const roomId = this.socketRoom.get(socketId);
     return roomId ? this.rooms.get(roomId) : undefined;
@@ -455,6 +486,7 @@ export class RoomManager {
       pickingPlayerId: null,
       lastPunishment: null,
     };
+    (room as any)._lastActiveAt = Date.now();
     this.rooms.set(roomId, room);
     return room;
   }
