@@ -1,0 +1,154 @@
+<template>
+  <div class="min-h-screen flex flex-col safe-top" style="background:var(--ink-dark)">
+    <WinnerOverlay :show="store.winnerBanner" :winner-name="store.room?.winner??''" :rounds="store.room?.round" @close="store.winnerBanner=false" />
+
+    <header class="flex items-center justify-between px-4 py-2.5 border-b" style="border-color:rgba(212,168,67,0.12)">
+      <div class="flex items-center gap-2">
+        <span class="candle-flicker text-lg">🕯️</span>
+        <span class="text-sm font-bold tracking-[0.2em]" style="color:var(--gold)">吹牛酒肆</span>
+        <span class="text-xs px-2 py-0.5 rounded border ml-1 hidden sm:inline" style="border-color:rgba(212,168,67,0.2);color:var(--ink-light)">{{ store.gameMode==='dice'?'🎲 骰子':'🃏 酒令' }}</span>
+      </div>
+      <div class="text-xs tracking-widest" style="color:var(--ink-light)">第{{ store.room?.round??0 }}回合 · <span style="color:var(--gold)">{{ store.roomId }}</span></div>
+      <div class="flex items-center gap-2">
+        <span class="text-xs" :style="{color:store.connected?'var(--jade)':'var(--vermillion)'}">{{ store.connected?'●':'○' }}</span>
+        <button @click="soundEnabled=!soundEnabled" class="text-sm opacity-40 hover:opacity-80">{{ soundEnabled?'🔊':'🔇' }}</button>
+        <button @click="showChat=!showChat" class="text-xs opacity-40 hover:opacity-80">💬<span v-if="unreadCount>0" class="ml-0.5 text-red-400 font-bold">{{ unreadCount }}</span></button>
+      </div>
+    </header>
+
+    <div class="flex-1 flex flex-col xl:flex-row gap-3 p-3 max-w-7xl mx-auto w-full">
+      <aside class="xl:w-56 flex-shrink-0">
+        <div class="seat-rail xl:flex xl:flex-col xl:gap-2">
+          <p class="text-xs tracking-widest opacity-40 mb-0.5 hidden xl:block">江湖豪客</p>
+          <GameSeat v-for="p in store.room?.players" :key="p.id" :player="p" :is-me="p.id===store.myId" :is-current="isCurrentPlayer(p.id)" />
+          <div v-for="i in emptySeats" :key="'e'+i" class="rounded-xl p-3 border border-white/5 bg-black/10 flex items-center gap-2 opacity-20"><span class="text-xl">🪑</span><span class="text-xs">虚位以待</span></div>
+        </div>
+        <GameLog class="mt-2 hidden xl:flex" />
+      </aside>
+
+      <main class="flex-1 flex flex-col gap-3 min-w-0">
+        <div class="card-ink p-4 text-center relative overflow-hidden">
+          <span class="absolute right-3 top-1 text-6xl opacity-[0.03] pointer-events-none">令</span>
+          <p class="text-xs tracking-widest opacity-40 mb-2">台面喊话</p>
+          <transition name="bid" mode="out-in">
+            <div v-if="currentBidDisplay" :key="currentBidDisplay.label" class="fade-in-up">
+              <p class="text-sm opacity-60">{{ currentBidDisplay.playerName }} 喊出：</p>
+              <p class="text-3xl sm:text-4xl font-bold mt-1" style="color:var(--gold)">{{ currentBidDisplay.label }}</p>
+            </div>
+            <p v-else key="empty" class="text-xl opacity-20">— 尚无喊话 —</p>
+          </transition>
+        </div>
+
+        <DiceCup v-if="store.gameMode==='dice'" :dice="store.myDice" :rolling="store.diceRolling" />
+        <CardHand v-if="store.gameMode==='card'" :hand="store.myHand" :master-suit="store.room?.masterSuit??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" @play="onCardPlay" />
+        <CallPanel v-if="store.phase==='bidding'" :mode="store.gameMode" :is-my-turn="store.isMyTurn" :current-player-name="store.currentPlayer?.name??''" :current-bid="store.room?.currentDiceBid??store.room?.currentCardBid??null" :master-suit="store.room?.masterSuit??null" :my-dice="store.myDice" @dice-bid="onDiceBid" @challenge="onChallenge" />
+
+        <div v-if="store.phase==='result'" class="card-ink p-4 text-center"><p class="text-sm opacity-50 tracking-widest">⏳ 3秒后自动开始下一回合...</p></div>
+
+        <div v-if="store.phase==='gameOver'" class="card-ink p-6 text-center bounce-in">
+          <p class="text-4xl mb-3">🏆</p>
+          <p class="text-xl font-bold tracking-widest" style="color:var(--gold)">{{ store.room?.winner }} 荣登酒霸！</p>
+          <p class="text-xs mt-2 mb-4 opacity-40">共 {{ store.room?.round }} 回合</p>
+          <div class="flex gap-3 justify-center flex-wrap">
+            <button @click="backToLobby" class="btn-gold">返回酒肆</button>
+            <button @click="downloadReplay" class="btn-gold text-xs">💾 录像</button>
+          </div>
+        </div>
+
+        <GameLog class="xl:hidden" />
+      </main>
+
+      <aside v-show="showChat" class="xl:w-64 flex-shrink-0"><ChatPanel /></aside>
+    </div>
+
+    <PunishmentModal v-if="store.showPunishment && store.challengeResult" :result="store.challengeResult" @close="store.closePunishment()" />
+
+    <transition name="toast">
+      <div v-if="store.errorMsg" class="fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 rounded-xl z-50 flex items-center gap-3 safe-bottom" style="background:var(--vermillion);color:white">
+        {{ store.errorMsg }}
+        <button @click="store.clearError()" class="opacity-70 hover:opacity-100 text-lg">✕</button>
+      </div>
+    </transition>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, watch } from 'vue';
+import { useRouter } from 'vue-router';
+import { useGameStore } from '../stores/gameStore';
+import type { DiceFace, CardSuit } from '../stores/gameStore';
+import GameSeat from '../components/GameSeat.vue';
+import DiceCup from '../components/DiceCup.vue';
+import CardHand from '../components/CardHand.vue';
+import CallPanel from '../components/CallPanel.vue';
+import PunishmentModal from '../components/PunishmentModal.vue';
+import ChatPanel from '../components/ChatPanel.vue';
+import GameLog from '../components/GameLog.vue';
+import WinnerOverlay from '../components/WinnerOverlay.vue';
+import { sound } from '../utils/useSound';
+import { replay } from '../utils/ReplayRecorder';
+import { inkSplash } from '../utils/useConfetti';
+
+const router = useRouter();
+const store  = useGameStore();
+const showChat      = ref(true);
+const soundEnabled  = ref(localStorage.getItem('chuiniu_sound') !== 'off');
+const lastReadCount = ref(0);
+
+const unreadCount = computed(() =>
+  showChat.value ? 0 : store.chatMessages.length - lastReadCount.value
+);
+watch(showChat, v => { if (v) lastReadCount.value = store.chatMessages.length; });
+watch(soundEnabled, v => localStorage.setItem('chuiniu_sound', v ? 'on' : 'off'));
+
+// 叫牌变化时播放音效
+watch(() => store.room?.currentDiceBid, (v, old) => {
+  if (v && v !== old && soundEnabled.value) sound.bidConfirm();
+});
+watch(() => store.room?.currentCardBid, (v, old) => {
+  if (v && v !== old && soundEnabled.value) sound.bidConfirm();
+});
+
+const emptySeats = computed(() => Math.max(0, 4 - (store.room?.players.length ?? 0)));
+
+const currentBidDisplay = computed(() => {
+  if (store.gameMode === 'dice' && store.room?.currentDiceBid) {
+    const b = store.room.currentDiceBid;
+    return { playerName: b.playerName, label: `${b.quantity} 个 ${faceChar(b.face)}` };
+  }
+  if (store.gameMode === 'card' && store.room?.currentCardBid) {
+    const b = store.room.currentCardBid;
+    return { playerName: b.playerName, label: `${b.quantity} 张 ${suitLabel(b.suit)}` };
+  }
+  return null;
+});
+
+function faceChar(f: number) { return ['⚀','⚁','⚂','⚃','⚄','⚅'][f - 1] ?? '?'; }
+function suitLabel(s: string) {
+  return ({ huadiao:'花雕', nverhong:'女儿红', zhuyeqing:'竹叶青', wild:'赖子' } as any)[s] ?? s;
+}
+function isCurrentPlayer(id: string) {
+  const idx = store.room?.currentPlayerIndex ?? -1;
+  return store.room?.players[idx]?.id === id;
+}
+function onDiceBid(qty: number, face: DiceFace) { store.diceBid(qty, face); }
+function onChallenge() {
+  if (soundEnabled.value) { sound.challengePress(); inkSplash(); }
+  store.gameMode === 'dice' ? store.diceChallenge() : store.cardChallenge();
+}
+function onCardPlay(cards: CardSuit[], claimSuit: CardSuit, claimQty: number) {
+  store.cardPlay(cards, claimSuit, claimQty);
+}
+function backToLobby() { store.disconnect(); router.push('/'); }
+function downloadReplay() { replay.download(); }
+
+if (!store.roomId) router.push('/');
+</script>
+
+<style scoped>
+.bid-enter-active,.bid-leave-active { transition: all 0.2s ease; }
+.bid-enter-from { opacity:0; transform:translateY(-6px); }
+.bid-leave-to   { opacity:0; transform:translateY(6px); }
+.toast-enter-active,.toast-leave-active { transition: all 0.3s ease; }
+.toast-enter-from,.toast-leave-to { opacity:0; transform:translate(-50%,16px); }
+</style>
