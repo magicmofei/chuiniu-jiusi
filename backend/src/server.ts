@@ -16,13 +16,23 @@ import {
   GameMode,
 } from './types';
 
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['*'];
+
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: ALLOWED_ORIGINS.includes('*') ? '*' : ALLOWED_ORIGINS,
+  methods: ['GET', 'POST'],
+}));
 app.use(express.json());
 
 const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  cors: {
+    origin: ALLOWED_ORIGINS.includes('*') ? '*' : ALLOWED_ORIGINS,
+    methods: ['GET', 'POST'],
+  },
   // 断线重连配置
   connectionStateRecovery: { maxDisconnectionDuration: 6000 },
 });
