@@ -57,10 +57,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from 'vue';
+import { ref, watch, nextTick } from 'vue';
 import type { DiceFace } from '../stores/gameStore';
 import { sound } from '../utils/useSound';
-import { inkSplash } from '../utils/useConfetti';
+
 
 const props = defineProps<{ dice: DiceFace[]; rolling?: boolean }>();
 

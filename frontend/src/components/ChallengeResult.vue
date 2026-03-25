@@ -9,13 +9,20 @@
       <p v-else class="text-2xl font-bold" style="color: var(--vermillion)">
         吹牛败露！{{ result.bidderName }} 喝酒！
       </p>
-      <p class="text-sm mt-2" style="color: var(--ink-light)">
+
+      <!-- 骰子模式 -->
+      <p v-if="result.type === 'dice'" class="text-sm mt-2" style="color: var(--ink-light)">
         喊话：{{ result.bid.quantity }} 个 {{ diceFaceChar(result.bid.face) }}
         · 实际共 {{ result.actualCount }} 个
       </p>
+      <!-- 牌局模式 -->
+      <p v-else class="text-sm mt-2" style="color: var(--ink-light)">
+        喊话：{{ result.bid.quantity }} 张 {{ result.bid.suit }}
+      </p>
     </div>
 
-    <div class="space-y-2">
+    <!-- 骰子明细 -->
+    <div v-if="result.type === 'dice'" class="space-y-2">
       <div v-for="pd in result.allDice" :key="pd.playerId" class="flex items-center gap-3">
         <span class="text-xs w-20 truncate" style="color: var(--ink-light)">{{ pd.playerName }}</span>
         <div class="flex gap-1">
@@ -28,12 +35,19 @@
       </div>
     </div>
 
+    <!-- 牌局明细 -->
+    <div v-else class="space-y-2">
+      <p class="text-xs text-center" style="color: var(--ink-light)">
+        实际出牌：{{ result.bid.actualCards?.join(', ') ?? '—' }}
+      </p>
+    </div>
+
     <p class="text-center text-xs mt-5 animate-pulse" style="color: var(--ink-light)">3秒后自动开始下一回合...</p>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { ChallengeResult } from '../stores/game';
+import type { ChallengeResult } from '../stores/gameStore';
 
 defineProps<{ result: ChallengeResult }>();
 

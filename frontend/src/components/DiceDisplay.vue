@@ -12,7 +12,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { DiceFace } from '../stores/game';
+import type { DiceFace } from '../stores/gameStore';
 
 const props = defineProps<{ face: DiceFace; animate?: boolean }>();
 

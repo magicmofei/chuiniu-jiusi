@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import type { PlayerPublicView } from '../stores/game';
+import type { PlayerPublicView } from '../stores/gameStore';
 
 defineProps<{
   player: PlayerPublicView;
