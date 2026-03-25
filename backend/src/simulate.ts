@@ -114,9 +114,16 @@ function simulateGame(mode: GameMode) {
         } else {
           const r = result;
           log(`  实际打出: [${r.bid.actualCards.join(',')}]，声称 ${r.bid.quantity} 张 ${r.bid.suit}`);
-          log(`  ${r.bidSuccess ? '✓ 叫牌成真' : '✗ 吹牛败露'} → ${r.loserNames[0]} 转酒壶！`);
-          const p = r.punishment;
-          log(`  🍶 轮盘: 格${p.chamberBefore}→格${p.chamberAfter} · ${p.poisoned ? '💀 中毒！' : '安全'} · 剩余 ${p.livesRemaining} 命`);
+          log(`  ${r.bidSuccess ? '✓ 叫牌成真' : '✗ 吹牛败露'} → ${r.loserNames[0]} 需要选酒`);
+
+          const cardEngine = engine as CardGame;
+          const picked = cardEngine.aiPickBottle(r.loserId);
+          if (picked !== null) {
+            const p = cardEngine.pickBottle(r.loserId, picked);
+            if (!('error' in p)) {
+              log(`  🍶 ${r.loserNames[0]} 选择第${picked + 1}瓶 → ${p.poisoned ? '💀 蒙汗药' : '安全'} · 剩余酒瓶 ${p.remainingCount} · 剩余 ${p.livesRemaining} 命`);
+            }
+          }
         }
 
         const updatedRoom = rm.getRoom(roomId)!;

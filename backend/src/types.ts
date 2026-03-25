@@ -28,19 +28,36 @@ export interface MengHanPunishment {
   eliminated: boolean;
 }
 
-/** 牌模式：转酒壶（俄罗斯轮盘），6格酒壶1格毒 */
-export interface RouletteState {
-  chamber: number;      // 当前酒壶格（0-5），服务端维护
-  poisonSlot: number;   // 毒药所在格（0-5），只有服务端知道
+/** 牌模式：每人6瓶酒，1瓶蒙汗药，输家选一瓶喝 */
+export interface BottleState {
+  remaining: number[];  // 还剩的酒瓶索引（0-5），服务端维护
+  poisonSlot: number;   // 毒药瓶索引（0-5），只有服务端知道
 }
 
+export interface BottlePunishment {
+  type: 'bottle';
+  loserId: string;
+  loserName: string;
+  pickedIndex: number;  // 选的是第几瓶（0-5）
+  poisoned: boolean;    // 是否中毒
+  livesLost: number;
+  livesRemaining: number;
+  eliminated: boolean;
+  remainingCount: number; // 喝后还剩几瓶
+}
+
+/** @deprecated 保留兼容，已被 BottlePunishment 取代 */
+export interface RouletteState {
+  chamber: number;
+  poisonSlot: number;
+}
 export interface RoulettePunishment {
   type: 'roulette';
   loserId: string;
   loserName: string;
   chamberBefore: number;
   chamberAfter: number;
-  poisoned: boolean;    // 是否中毒（触发减命）
+  poisoned: boolean;
   livesLost: number;
   livesRemaining: number;
   eliminated: boolean;
@@ -60,6 +77,7 @@ export interface Player {
   dice: DiceFace[];      // 当前骰子（服务端保存，不推送给他人）
   // 牌模式
   hand: CardSuit[];      // 手牌
+  bottles: BottleState | null; // 扑克模式：个人6瓶酒状态
   // 断线重连
   disconnectedAt: number | null;  // 断线时间戳
 }
@@ -82,7 +100,7 @@ export interface CardBid {
   actualCards: CardSuit[];
 }
 
-export type PunishmentResult = MengHanPunishment | RoulettePunishment;
+export type PunishmentResult = MengHanPunishment | RoulettePunishment | BottlePunishment;
 
 // ── 房间 ─────────────────────────────────────────────────────
 export interface Room {
@@ -102,8 +120,10 @@ export interface Room {
   winner: string | null;
   // 内部：淘汰玩家仍留在 socket room 以接收事件
   eliminatedPlayerIds: string[];
-  // 牌模式：酒壶轮盘状态（每局初始化一次）
+  // 牌模式：酒壶轮盘状态（已废弃，保留兼容）
   roulette: RouletteState | null;
+  // 牌模式：输家等待选酒
+  pickingPlayerId: string | null;  // 当前正在选酒的玩家 id
   // 最近一次惩罚结果（用于前端动画）
   lastPunishment: PunishmentResult | null;
 }
@@ -136,7 +156,11 @@ export interface RoomPublicView {
   winner: string | null;
   eliminatedPlayerIds: string[];
   lastPunishment: PunishmentResult | null;
-  // 牌模式：轮盘当前格（不暴露毒药位置）
+  // 牌模式：各玩家剩余酒瓶数（公开），不暴露毒药位置
+  bottleRemaining: Record<string, number> | null;
+  // 牌模式：当前正在选酒的玩家 id
+  pickingPlayerId: string | null;
+  // 牌模式：轮盘当前格（不暴露毒药位置，保留兼容）
   rouletteChamber: number | null;
 }
 
@@ -167,7 +191,8 @@ export interface CardChallengeResult {
   bidSuccess: boolean;   // true = 叫牌成真，挑战者输
   loserIds: string[];
   loserNames: string[];
-  punishment: RoulettePunishment; // 转酒壶惩罚详情
+  loserId: string;        // 需要选酒的玩家 id
+  punishment: BottlePunishment | null; // 选酒后才有结果，选酒前为 null
   room: RoomPublicView;
 }
 
@@ -192,6 +217,15 @@ export interface ServerToClientEvents {
 
   // 质疑结果
   'player:challenge': (result: ChallengeResult) => void;
+
+  // 牌模式：服务端通知某玩家选酒
+  'card:pickBottle': (data: { loserId: string; loserName: string; remainingBottles: number[] }) => void;
+
+  // 牌模式：玩家已选中某瓶（开始喝酒动画，不含是否中毒）
+  'card:bottlePicked': (data: { loserId: string; loserName: string; bottleIndex: number }) => void;
+
+  // 牌模式：喝完后结算结果（广播给所有人）
+  'card:bottleResult': (punishment: BottlePunishment) => void;
 
   // 聊天
   'chat:message': (msg: {
@@ -221,6 +255,7 @@ export interface ClientToServerEvents {
   // 牌模式
   'player:cardPlay': (data: { cards: CardSuit[]; claimSuit: CardSuit; claimQuantity: number }) => void;
   'player:cardChallenge': () => void;
+  'player:pickBottle': (data: { bottleIndex: number }) => void;
 
   // 聊天
   'chat:send': (data: { text: string; type: string }) => void;

@@ -20,7 +20,7 @@
       <aside class="xl:w-56 flex-shrink-0">
         <div class="seat-rail xl:flex xl:flex-col xl:gap-2">
           <p class="text-xs tracking-widest opacity-40 mb-0.5 hidden xl:block">江湖豪客</p>
-          <GameSeat v-for="p in store.room?.players" :key="p.id" :player="p" :is-me="p.id===store.myId" :is-current="isCurrentPlayer(p.id)" />
+          <GameSeat v-for="p in store.room?.players" :key="p.id" :player="p" :is-me="p.id===store.myId" :is-current="isCurrentPlayer(p.id)" :room="store.room" />
           <div v-for="i in emptySeats" :key="'e'+i" class="rounded-xl p-3 border border-white/5 bg-black/10 flex items-center gap-2 opacity-20"><span class="text-xl">🪑</span><span class="text-xs">虚位以待</span></div>
         </div>
         <GameLog class="mt-2 hidden xl:flex" />
@@ -42,6 +42,25 @@
         <DiceCup v-if="store.gameMode==='dice'" :dice="store.myDice" :rolling="store.diceRolling" />
         <CardHand v-if="store.gameMode==='card'" :hand="store.myHand" :master-suit="store.room?.masterSuit??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" @play="onCardPlay" />
         <CallPanel v-if="store.phase==='bidding'" :mode="store.gameMode" :is-my-turn="store.isMyTurn" :current-player-name="store.currentPlayer?.name??''" :current-bid="store.room?.currentDiceBid??store.room?.currentCardBid??null" :master-suit="store.room?.masterSuit??null" :my-dice="store.myDice" @dice-bid="onDiceBid" @challenge="onChallenge" />
+
+        <div v-if="showBottlePicker" class="card-ink p-4 text-center">
+          <p class="text-sm tracking-widest opacity-70 mb-3">从你面前 6 瓶里选一瓶喝下</p>
+          <div class="flex flex-wrap justify-center gap-2">
+            <button
+              v-for="idx in myRemainingBottles"
+              :key="idx"
+              class="btn-gold"
+              @click="onPickBottle(idx)"
+            >
+              🍶 第{{ idx + 1 }}瓶
+            </button>
+          </div>
+          <p class="text-xs opacity-40 mt-3">外观看起来都一样，喝下后才知道是不是蒙汗药</p>
+        </div>
+
+        <div v-else-if="store.phase==='punishment' && store.pendingBottlePick" class="card-ink p-4 text-center">
+          <p class="text-sm opacity-70">{{ store.pendingBottlePick.loserName }} 正在喝第 {{ store.pendingBottlePick.bottleIndex + 1 }} 瓶…</p>
+        </div>
 
         <div v-if="store.phase==='result'" class="card-ink p-4 text-center"><p class="text-sm opacity-50 tracking-widest">⏳ 3秒后自动开始下一回合...</p></div>
 
@@ -111,6 +130,18 @@ watch(() => store.room?.currentCardBid, (v, old) => {
 
 const emptySeats = computed(() => Math.max(0, 4 - (store.room?.players.length ?? 0)));
 
+const showBottlePicker = computed(() => {
+  if (store.gameMode !== 'card') return false;
+  if (store.phase !== 'punishment') return false;
+  if (!store.bottlePickPrompt) return false;
+  return store.bottlePickPrompt.loserId === store.myId;
+});
+
+const myRemainingBottles = computed(() => {
+  if (!store.bottlePickPrompt) return [] as number[];
+  return store.bottlePickPrompt.remainingBottles;
+});
+
 const currentBidDisplay = computed(() => {
   if (store.gameMode === 'dice' && store.room?.currentDiceBid) {
     const b = store.room.currentDiceBid;
@@ -138,6 +169,9 @@ function onChallenge() {
 }
 function onCardPlay(cards: CardSuit[], claimSuit: CardSuit, claimQty: number) {
   store.cardPlay(cards, claimSuit, claimQty);
+}
+function onPickBottle(bottleIndex: number) {
+  store.pickBottle(bottleIndex);
 }
 function backToLobby() { store.disconnect(); router.push('/'); }
 function downloadReplay() { replay.download(); }

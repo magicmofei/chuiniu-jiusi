@@ -3,7 +3,7 @@
 // 负责：房间创建/加入/离开、6位房间码、断线重连、AI补位
 // ============================================================
 
-import { Room, Player, GameMode, CardSuit, RoomPublicView } from './types';
+import { Room, Player, GameMode, CardSuit, RoomPublicView, BottleState } from './types';
 import { DiceGame } from './gameEngine/DiceGame';
 import { CardGame } from './gameEngine/CardGame';
 import { GameEngine } from './gameEngine/base/GameEngine';
@@ -11,6 +11,7 @@ import { GameEngine } from './gameEngine/base/GameEngine';
 const MAX_PLAYERS = 4;
 const INITIAL_LIVES = 1;
 const INITIAL_DICE = 5;
+const BOTTLE_COUNT = 6;
 const RECONNECT_TIMEOUT_MS = 5000; // 5秒内可断线重连
 const AI_NAMES = ['酒仙甲', '骗子乙', '牛皮丙', '吹风丁'];
 const AI_AVATARS = ['🤖', '👺', '🎭', '🃏'];
@@ -23,6 +24,15 @@ function generateRoomCode(): string {
     code += chars[Math.floor(Math.random() * chars.length)];
   }
   return code;
+}
+
+// 生成玩家初始酒瓶状态（6瓶，随机1瓶毒）
+function createBottleState(): BottleState {
+  const poisonSlot = Math.floor(Math.random() * BOTTLE_COUNT);
+  return {
+    remaining: Array.from({ length: BOTTLE_COUNT }, (_, i) => i),
+    poisonSlot,
+  };
 }
 
 // 创建 AI 玩家
@@ -38,6 +48,7 @@ function createAIPlayer(index: number): Player {
     diceCount: INITIAL_DICE,
     dice: [],
     hand: [] as CardSuit[],
+    bottles: createBottleState(),
     disconnectedAt: null,
   };
 }
@@ -55,6 +66,7 @@ function createPlayer(socketId: string, name: string, avatar: string): Player {
     diceCount: INITIAL_DICE,
     dice: [],
     hand: [] as CardSuit[],
+    bottles: createBottleState(),
     disconnectedAt: null,
   };
 }
@@ -285,6 +297,11 @@ export class RoomManager {
       winner: room.winner,
       eliminatedPlayerIds: room.eliminatedPlayerIds,
       lastPunishment: room.lastPunishment,
+      bottleRemaining: room.players.reduce((acc, p) => {
+        acc[p.id] = p.bottles?.remaining.length ?? 0;
+        return acc;
+      }, {} as Record<string, number>),
+      pickingPlayerId: room.pickingPlayerId ?? null,
       rouletteChamber: room.roulette?.chamber ?? null,
     };
   }
@@ -309,6 +326,7 @@ export class RoomManager {
       winner: null,
       eliminatedPlayerIds: [],
       roulette: null,
+      pickingPlayerId: null,
       lastPunishment: null,
     };
     this.rooms.set(roomId, room);

@@ -28,12 +28,18 @@ export interface MengHanPunishment {
   type: 'menghan'; loserId: string; loserName: string;
   livesLost: number; livesRemaining: number; eliminated: boolean;
 }
-export interface RoulettePunishment {
-  type: 'roulette'; loserId: string; loserName: string;
-  chamberBefore: number; chamberAfter: number;
-  poisoned: boolean; livesLost: number; livesRemaining: number; eliminated: boolean;
+export interface BottlePunishment {
+  type: 'bottle';
+  loserId: string;
+  loserName: string;
+  pickedIndex: number;
+  poisoned: boolean;
+  livesLost: number;
+  livesRemaining: number;
+  eliminated: boolean;
+  remainingCount: number;
 }
-export type PunishmentResult = MengHanPunishment | RoulettePunishment;
+export type PunishmentResult = MengHanPunishment | BottlePunishment;
 
 export interface RoomPublicView {
   roomId: string; mode: GameMode;
@@ -46,6 +52,8 @@ export interface RoomPublicView {
   winner: string | null;
   eliminatedPlayerIds: string[];
   lastPunishment: PunishmentResult | null;
+  bottleRemaining: Record<string, number> | null;
+  pickingPlayerId: string | null;
   rouletteChamber: number | null;
 }
 
@@ -62,7 +70,9 @@ export interface CardChallengeResult {
   bidderId: string; bidderName: string;
   bid: CardBid & { actualCards: CardSuit[] };
   bidSuccess: boolean; loserIds: string[]; loserNames: string[];
-  punishment: RoulettePunishment; room: RoomPublicView;
+  loserId: string;
+  punishment: BottlePunishment | null;
+  room: RoomPublicView;
 }
 export type ChallengeResult = DiceChallengeResult | CardChallengeResult;
 
@@ -96,6 +106,8 @@ export const useGameStore = defineStore('game', () => {
   const gameLog      = ref<string[]>([]);
   const diceRolling  = ref(false);
   const winnerBanner = ref(false);
+  const bottlePickPrompt = ref<{ loserId: string; loserName: string; remainingBottles: number[] } | null>(null);
+  const pendingBottlePick = ref<{ loserId: string; loserName: string; bottleIndex: number } | null>(null);
 
   function addLog(msg: string) {
     gameLog.value.unshift(`[${new Date().toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}] ${msg}`);
@@ -141,12 +153,45 @@ export const useGameStore = defineStore('game', () => {
     s.on('room:update',       (r: RoomPublicView) => { room.value = r; });
     s.on('game:stateUpdate',  (r: RoomPublicView) => { room.value = r; });
 
+    s.on('card:pickBottle', (data: { loserId: string; loserName: string; remainingBottles: number[] }) => {
+      bottlePickPrompt.value = data;
+      addLog(`${data.loserName} 需要从剩余酒瓶中选一瓶`);
+    });
+
+    s.on('card:bottlePicked', (data: { loserId: string; loserName: string; bottleIndex: number }) => {
+      pendingBottlePick.value = data;
+      addLog(`${data.loserName} 选中了 1 瓶，正在喝…`);
+    });
+
+    s.on('card:bottleResult', (punishment: BottlePunishment) => {
+      // 结算后清理“选瓶中”状态
+      pendingBottlePick.value = null;
+      bottlePickPrompt.value = null;
+
+      // 把结果塞进 challengeResult，供惩罚动画弹窗展示
+      if (challengeResult.value?.type === 'card') {
+        challengeResult.value = {
+          ...challengeResult.value,
+          punishment,
+        };
+        showPunishment.value = true;
+      }
+
+      if (punishment.poisoned) {
+        addLog(`${punishment.loserName} 喝到蒙汗药，${punishment.eliminated ? '被淘汰！' : '还剩 ' + punishment.livesRemaining + ' 命'}`);
+      } else {
+        addLog(`${punishment.loserName} 平安无事，剩余酒瓶 ${punishment.remainingCount}`);
+      }
+    });
+
     s.on('game:start', (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardSuit[] }) => {
       room.value = data.room;
       myDice.value = data.yourDice;
       myHand.value = data.yourHand;
       challengeResult.value = null;
       showPunishment.value = false;
+      bottlePickPrompt.value = null;
+      pendingBottlePick.value = null;
       winnerBanner.value = false;
       diceRolling.value = true;
       setTimeout(() => { diceRolling.value = false; }, 700);
@@ -166,6 +211,8 @@ export const useGameStore = defineStore('game', () => {
       myHand.value = data.yourHand;
       challengeResult.value = null;
       showPunishment.value = false;
+      bottlePickPrompt.value = null;
+      pendingBottlePick.value = null;
       diceRolling.value = true;
       setTimeout(() => { diceRolling.value = false; }, 700);
       addLog(`第 ${data.room.round} 回合开始`);
@@ -174,12 +221,13 @@ export const useGameStore = defineStore('game', () => {
     s.on('player:challenge', (result: ChallengeResult) => {
       challengeResult.value = result;
       room.value = result.room;
-      showPunishment.value = true;
       replay.push('challenge', result);
       if (result.type === 'dice') {
+        showPunishment.value = true;
         addLog(`${result.challengerName} 质疑 → ${result.bidSuccess?'叫牌成真':'吹牛败露'}，${result.loserNames[0]} 受罚`);
       } else {
-        addLog(`${result.challengerName} 质疑 → ${result.bidSuccess?'叫牌成真':'吹牛败露'}，${result.loserNames[0]} 转酒壶`);
+        showPunishment.value = false;
+        addLog(`${result.challengerName} 质疑 → ${result.bidSuccess?'叫牌成真':'吹牛败露'}，${result.loserNames[0]} 需要选酒`);
       }
     });
 
@@ -230,6 +278,10 @@ export const useGameStore = defineStore('game', () => {
     replay.push('cardChallenge', {});
   }
 
+  function pickBottle(bottleIndex: number) {
+    socket.value?.emit('player:pickBottle', { bottleIndex });
+  }
+
   function sendChat(text: string, type: 'chat' | 'emoji' = 'chat') {
     if (!text.trim()) return;
     socket.value?.emit('chat:send', { text, type });
@@ -256,6 +308,8 @@ export const useGameStore = defineStore('game', () => {
     roomId.value = ''; myId.value = '';
     challengeResult.value = null;
     showPunishment.value = false;
+    bottlePickPrompt.value = null;
+    pendingBottlePick.value = null;
     chatMessages.value = [];
     gameLog.value = [];
     winnerBanner.value = false;
@@ -268,11 +322,12 @@ export const useGameStore = defineStore('game', () => {
     myId, myName, myAvatar, myDice, myHand,
     roomId, room, challengeResult, errorMsg,
     connected, socket, showPunishment, gameMode,
+    bottlePickPrompt, pendingBottlePick,
     chatMessages, gameLog, diceRolling, winnerBanner,
     phase, isMyTurn, me, currentPlayer,
     connect, ready,
     diceBid, diceChallenge,
-    cardPlay, cardChallenge,
+    cardPlay, cardChallenge, pickBottle,
     sendChat, reconnect, disconnect,
     clearError, closePunishment,
   };

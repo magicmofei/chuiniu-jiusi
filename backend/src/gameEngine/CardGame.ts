@@ -1,14 +1,13 @@
 // ============================================================
 // 吹牛酒肆 - 扑克牌游戏引擎
-// 状态机：WAITING → ROLLING(发牌) → CALLING → CHALLENGING → PUNISHMENT(转酒壶) → NEXT_ROUND
-// 牌组：花雕×6 + 女儿红×6 + 竹叶青×6 + 赖子×2 = 20张
-// 惩罚：俄罗斯轮盘 —— 6格酒壶，1格藏蒙汗药，输家转壶，中毒则减命
+// 惩罚机制：每人6瓶酒（1瓶蒙汗药），输家从剩余酒瓶中选一瓶喝
+// 喝完才知道是否中毒，酒越喝越少，最后一瓶必为蒙汗药
 // ============================================================
 
 import { GameEngine, RoundStartData, ChallengeData } from './base/GameEngine';
 import {
   Room, Player, CardSuit, CardBid,
-  CardChallengeResult, RoulettePunishment, DiceFace
+  CardChallengeResult, BottlePunishment, DiceFace
 } from '../types';
 
 const DECK: CardSuit[] = [
@@ -20,12 +19,12 @@ const DECK: CardSuit[] = [
 
 const SUITS: CardSuit[] = ['huadiao', 'nverhong', 'zhuyeqing'];
 const HAND_SIZE = 5;
-const ROULETTE_CHAMBERS = 6;
 
 export class CardGame extends GameEngine {
   constructor(room: Room) {
     super(room);
-    this.initRoulette();
+    this.room.roulette = null;
+    this.room.pickingPlayerId = null;
     this.room.lastPunishment = null;
   }
 
@@ -35,6 +34,7 @@ export class CardGame extends GameEngine {
     this.room.currentCardBid = null;
     this.room.cardBidHistory = [];
     this.room.lastPunishment = null;
+    this.room.pickingPlayerId = null;
     this.room.round += 1;
 
     const shuffled = this.shuffle([...DECK]);
@@ -67,7 +67,6 @@ export class CardGame extends GameEngine {
     if (claimQuantity < 1 || claimQuantity > 3) return '声称数量须为1-3';
     if (!SUITS.includes(claimSuit)) return `主牌种类无效（可选：${SUITS.join('/')}）`;
 
-    // 防作弊：验证手牌
     const handCopy = [...currentPlayer.hand];
     for (const c of cards) {
       const idx = handCopy.indexOf(c);
@@ -89,7 +88,7 @@ export class CardGame extends GameEngine {
     return null;
   }
 
-  // ── CHALLENGING → PUNISHMENT ───────────────────────────────
+  // ── CHALLENGING → 进入选酒阶段 ────────────────────────────
   challenge(challengerId: string): ChallengeData | { error: string } {
     if (this.room.phase !== 'bidding') return { error: '当前不是出牌阶段' };
     const bid = this.room.currentCardBid;
@@ -107,17 +106,9 @@ export class CardGame extends GameEngine {
     const challenger = this.room.players.find(p => p.id === challengerId)!;
     const bidder = this.room.players.find(p => p.id === bid.playerId)!;
 
+    // 进入选酒阶段（punishment 阶段等待玩家选酒）
     this.room.phase = 'punishment';
-    const punishment = this.applyRoulettePunishment(loserPlayer);
-    this.room.lastPunishment = punishment;
-
-    this.eliminateDead();
-    const isGameOver = this.checkGameOver();
-    if (!isGameOver) {
-      this.room.phase = 'result';
-      const loserIndex = this.room.players.findIndex(p => p.id === loserId);
-      this.room.currentPlayerIndex = loserIndex >= 0 ? loserIndex : 0;
-    }
+    this.room.pickingPlayerId = loserId;
 
     const result: CardChallengeResult = {
       type: 'card',
@@ -129,7 +120,8 @@ export class CardGame extends GameEngine {
       bidSuccess,
       loserIds: [loserId],
       loserNames: [loserPlayer?.name ?? ''],
-      punishment,
+      loserId,
+      punishment: null, // 选酒前无结果
       room: this.toPublicView(),
     };
 
@@ -140,7 +132,63 @@ export class CardGame extends GameEngine {
     return { result, playerPrivateData: privateData };
   }
 
-  // ── AI 决策 ────────────────────────────────────────────────
+  // ── 玩家选酒 ──────────────────────────────────────────────
+  pickBottle(playerId: string, bottleIndex: number): BottlePunishment | { error: string } {
+    if (this.room.phase !== 'punishment') return { error: '当前不是惩罚阶段' };
+    if (this.room.pickingPlayerId !== playerId) return { error: '不是你选酒' };
+
+    const loser = this.room.players.find(p => p.id === playerId);
+    if (!loser) return { error: '找不到玩家' };
+    if (!loser.bottles) return { error: '酒瓶状态异常' };
+
+    const { remaining, poisonSlot } = loser.bottles;
+    if (!remaining.includes(bottleIndex)) return { error: '该酒瓶已不存在或无效' };
+
+    // 移除选中的酒瓶
+    loser.bottles.remaining = remaining.filter(i => i !== bottleIndex);
+
+    const poisoned = bottleIndex === poisonSlot;
+    let livesLost = 0;
+    if (poisoned) {
+      loser.lives -= 1;
+      livesLost = 1;
+      // 中毒后重置6瓶（新一局重新开始）
+      loser.bottles = this.createBottleState();
+    } else if (loser.bottles.remaining.length === 0) {
+      // 最后一瓶喝完还没中毒，理论上不会（毒瓶被留到最后），但做兜底
+      loser.lives -= 1;
+      livesLost = 1;
+      loser.bottles = this.createBottleState();
+    }
+
+    this.room.pickingPlayerId = null;
+
+    const punishment: BottlePunishment = {
+      type: 'bottle',
+      loserId: playerId,
+      loserName: loser.name,
+      pickedIndex: bottleIndex,
+      poisoned,
+      livesLost,
+      livesRemaining: loser.lives,
+      eliminated: loser.lives <= 0,
+      remainingCount: loser.bottles.remaining.length,
+    };
+
+    this.room.lastPunishment = punishment;
+    this.eliminateDead();
+    const isGameOver = this.checkGameOver();
+
+    if (!isGameOver) {
+      this.room.phase = 'result';
+      const loserIdx = this.room.players.findIndex(p => p.id === playerId);
+      this.room.currentPlayerIndex = loserIdx >= 0 ? loserIdx : 0;
+    }
+
+    return punishment;
+  }
+
+  // ── AI 决策（出牌阶段）────────────────────────────────────
   aiDecide(playerId: string): { action: 'bid'; data: unknown } | { action: 'challenge' } {
     const player = this.room.players.find(p => p.id === playerId);
     if (!player || player.hand.length === 0) return { action: 'challenge' };
@@ -149,7 +197,6 @@ export class CardGame extends GameEngine {
     if (!prev) return this.aiMakeBid(player, master);
 
     const totalCards = this.room.players.reduce((s, p) => s + p.hand.length, 0);
-    // 期望主牌数：主牌各6张+赖子2张，共14/20有效
     const expectedMaster = totalCards * (8 / 20);
     const overRatio = prev.quantity / Math.max(expectedMaster, 0.5);
     const challengeProb = Math.min(0.85, Math.max(0.05, (overRatio - 0.8) * 0.6));
@@ -157,42 +204,19 @@ export class CardGame extends GameEngine {
     return this.aiMakeBid(player, master);
   }
 
-  // ── 俄罗斯轮盘初始化 ──────────────────────────────────────
-  private initRoulette(): void {
-    this.room.roulette = {
-      chamber: 0,
-      poisonSlot: this.secureRandInt(0, ROULETTE_CHAMBERS - 1),
-    };
+  // AI 选酒：随机选一瓶
+  aiPickBottle(playerId: string): number | null {
+    const player = this.room.players.find(p => p.id === playerId);
+    if (!player?.bottles?.remaining.length) return null;
+    const { remaining } = player.bottles;
+    return remaining[this.secureRandInt(0, remaining.length - 1)];
   }
 
-  /**
-   * 转酒壶：格子推进1格，若命中毒药格则中毒减命
-   * 中毒后重新初始化轮盘（新一轮的毒药位置重新随机）
-   */
-  private applyRoulettePunishment(loser: Player): RoulettePunishment {
-    const roulette = this.room.roulette!;
-    const chamberBefore = roulette.chamber;
-    const chamberAfter = (chamberBefore + 1) % ROULETTE_CHAMBERS;
-    roulette.chamber = chamberAfter;
-
-    const poisoned = chamberAfter === roulette.poisonSlot;
-    let livesLost = 0;
-    if (poisoned) {
-      loser.lives -= 1;
-      livesLost = 1;
-      this.initRoulette(); // 重置轮盘
-    }
-
+  private createBottleState() {
+    const poisonSlot = this.secureRandInt(0, 5);
     return {
-      type: 'roulette',
-      loserId: loser.id,
-      loserName: loser.name,
-      chamberBefore,
-      chamberAfter,
-      poisoned,
-      livesLost,
-      livesRemaining: loser.lives,
-      eliminated: loser.lives <= 0,
+      remaining: [0, 1, 2, 3, 4, 5],
+      poisonSlot,
     };
   }
 
@@ -203,7 +227,6 @@ export class CardGame extends GameEngine {
       const count = Math.min(masterCards.length, this.secureRandInt(1, 2));
       return { action: 'bid', data: { cards: masterCards.slice(0, count), claimSuit: master, claimQuantity: count } };
     }
-    // 吹牛：出非主牌但声称是主牌
     return { action: 'bid', data: { cards: [otherCards[0]], claimSuit: master, claimQuantity: this.secureRandInt(1, 2) } };
   }
 

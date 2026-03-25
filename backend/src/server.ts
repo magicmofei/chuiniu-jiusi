@@ -8,11 +8,11 @@ import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
 import { RoomManager } from './rooms';
+import { CardGame } from './gameEngine/CardGame';
 import {
   ClientToServerEvents,
   ServerToClientEvents,
   DiceFace,
-  CardSuit,
   GameMode,
 } from './types';
 
@@ -88,19 +88,15 @@ function scheduleAIAction(roomId: string, delayMs = 1500): void {
 function broadcastChallengeResult(
   roomId: string,
   result: import('./types').ChallengeResult,
-  privateData: Map<string, { dice: number[]; hand: CardSuit[] }>
+  _privateData: Map<string, unknown>
 ): void {
   const room = rm.getRoom(roomId);
   if (!room) return;
 
-  // 逐玩家发送（含各自私有骰子/手牌）
+  // 逐玩家发送质疑结果
   room.players.forEach(p => {
-    const priv = privateData.get(p.id) ?? { dice: [], hand: [] };
     io.to(p.id).emit('player:challenge', result);
-    // 若下一回合立刻开始，私有数据在 game:roundStart 事件中发
   });
-
-  // 已淘汰但仍在 socket room 的玩家也能看到结果
   room.eliminatedPlayerIds.forEach(eid => {
     io.to(eid).emit('player:challenge', result);
   });
@@ -113,24 +109,96 @@ function broadcastChallengeResult(
     return;
   }
 
-  // 3秒后自动开始下一回合
+  // ── 牌模式：进入选酒阶段 ──────────────────────────────
+  if (result.type === 'card') {
+    const loserId = result.loserId;
+    const loserPlayer = room.players.find(p => p.id === loserId);
+    if (!loserPlayer || !loserPlayer.bottles) return;
+
+    // 通知输家（和旁观者）进入选酒阶段
+    io.to(roomId).emit('card:pickBottle', {
+      loserId,
+      loserName: loserPlayer.name,
+      remainingBottles: [...loserPlayer.bottles.remaining],
+    });
+
+    // 如果输家是 AI，延迟自动选酒
+    if (loserPlayer.isAI) {
+      scheduleAIPickBottle(roomId, loserId, 1800);
+    }
+    return;
+  }
+
+  // ── 骰子模式：3秒后自动开始下一回合 ─────────────────────
+  setTimeout(() => startNextRound(roomId), 3000);
+}
+
+// ── 开始下一回合 ─────────────────────────────────────────
+function startNextRound(roomId: string): void {
+  const room = rm.getRoom(roomId);
+  if (!room) return;
+  const engine = rm.getEngine(roomId);
+  if (!engine) return;
+  const roundData = engine.startRound();
+  room.players.forEach(p => {
+    const priv = roundData.playerPrivateData.get(p.id) ?? { dice: [], hand: [] };
+    io.to(p.id).emit('game:roundStart', {
+      room: roundData.room,
+      yourDice: priv.dice as DiceFace[],
+      yourHand: priv.hand,
+    });
+  });
+  const firstPlayer = engine.getCurrentPlayer();
+  if (firstPlayer?.isAI) scheduleAIAction(roomId, 1000);
+}
+
+// ── AI 选酒调度 ───────────────────────────────────────────
+function scheduleAIPickBottle(roomId: string, playerId: string, delayMs = 1800): void {
   setTimeout(() => {
+    const room = rm.getRoom(roomId);
+    if (!room || room.phase !== 'punishment') return;
+    if (room.pickingPlayerId !== playerId) return;
     const engine = rm.getEngine(roomId);
     if (!engine) return;
-    const roundData = engine.startRound();
-    // 给每个存活玩家发各自的私有数据
-    room.players.forEach(p => {
-      const priv = roundData.playerPrivateData.get(p.id) ?? { dice: [], hand: [] };
-      io.to(p.id).emit('game:roundStart', {
-        room: roundData.room,
-        yourDice: priv.dice as DiceFace[],
-        yourHand: priv.hand,
-      });
+    const cardEngine = engine as CardGame;
+    const bottleIndex = cardEngine.aiPickBottle(playerId);
+    if (bottleIndex === null) return;
+
+    // 先广播“已选瓶”，让前端先播喝酒动画
+    const drinkingLock = `drinking:${playerId}`;
+    room.pickingPlayerId = drinkingLock;
+
+    io.to(roomId).emit('card:bottlePicked', {
+      loserId: playerId,
+      loserName: room.players.find(p => p.id === playerId)?.name ?? '',
+      bottleIndex,
     });
-    // 检查开局第一个是否是 AI
-    const firstPlayer = engine.getCurrentPlayer();
-    if (firstPlayer?.isAI) scheduleAIAction(roomId, 1000);
-  }, 3000);
+
+    // 动画后再结算是否中毒
+    setTimeout(() => {
+      const latestRoom = rm.getRoom(roomId);
+      if (!latestRoom || latestRoom.phase !== 'punishment') return;
+      if (latestRoom.pickingPlayerId !== drinkingLock) return;
+      const latestEngine = rm.getEngine(roomId);
+      if (!latestEngine) return;
+      const latestCardEngine = latestEngine as CardGame;
+      const punishment = latestCardEngine.pickBottle(playerId, bottleIndex);
+      if ('error' in punishment) {
+        console.warn(`[AI选酒失败] ${punishment.error}`);
+        return;
+      }
+      io.to(roomId).emit('card:bottleResult', punishment);
+      io.to(roomId).emit('game:stateUpdate', rm.toPublicView(latestRoom));
+
+      const postRoom = rm.getRoom(roomId);
+      if (!postRoom) return;
+      if (postRoom.phase === 'gameOver') {
+        io.to(roomId).emit('game:over', { winner: postRoom.winner ?? '', room: rm.toPublicView(postRoom) });
+        return;
+      }
+      setTimeout(() => startNextRound(roomId), 3000);
+    }, 2200);
+  }, delayMs);
 }
 
 // ── Socket.io 主连接处理 ──────────────────────────────────
@@ -269,6 +337,65 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
 
     console.log(`[牌质疑] ${socket.id} 发起质疑`);
     broadcastChallengeResult(room.roomId, res.result, res.playerPrivateData);
+  });
+
+  // ── 牌模式：选酒 ─────────────────────────────────────────
+  socket.on('player:pickBottle', (data) => {
+    const room = rm.getRoomBySocket(socket.id);
+    if (!room) { socket.emit('error', '不在房间中'); return; }
+    const engine = rm.getEngine(room.roomId);
+    if (!engine) { socket.emit('error', '游戏未开始'); return; }
+
+    // 只有当前选酒玩家才能操作
+    if (room.pickingPlayerId !== socket.id) {
+      socket.emit('error', '还没轮到你选酒'); return;
+    }
+
+    const bottleIndex = data.bottleIndex;
+    const loserPlayer = room.players.find(p => p.id === socket.id);
+    if (!loserPlayer?.bottles?.remaining.includes(bottleIndex)) {
+      socket.emit('error', '该酒瓶已不存在或无效'); return;
+    }
+
+    const drinkingLock = `drinking:${socket.id}`;
+    room.pickingPlayerId = drinkingLock;
+
+    console.log(`[选酒] ${socket.id} 选了第${bottleIndex}瓶`);
+
+    // 先广播“已选瓶”，前端播放喝酒动画
+    io.to(room.roomId).emit('card:bottlePicked', {
+      loserId: socket.id,
+      loserName: loserPlayer.name,
+      bottleIndex,
+    });
+
+    // 动画结束后再结算
+    setTimeout(() => {
+      const latestRoom = rm.getRoom(room.roomId);
+      if (!latestRoom || latestRoom.phase !== 'punishment') return;
+      if (latestRoom.pickingPlayerId !== drinkingLock) return;
+      const latestEngine = rm.getEngine(room.roomId);
+      if (!latestEngine) return;
+
+      const cardEngine = latestEngine as CardGame;
+      const punishment = cardEngine.pickBottle(socket.id, bottleIndex);
+      if ('error' in punishment) {
+        socket.emit('error', punishment.error); return;
+      }
+
+      console.log(`[结算] ${socket.id} 第${bottleIndex}瓶，中毒=${punishment.poisoned}`);
+
+      io.to(room.roomId).emit('card:bottleResult', punishment);
+      io.to(room.roomId).emit('game:stateUpdate', rm.toPublicView(latestRoom));
+
+      const postRoom = rm.getRoom(room.roomId);
+      if (!postRoom) return;
+      if (postRoom.phase === 'gameOver') {
+        io.to(room.roomId).emit('game:over', { winner: postRoom.winner ?? '', room: rm.toPublicView(postRoom) });
+        return;
+      }
+      setTimeout(() => startNextRound(room.roomId), 3000);
+    }, 2200);
   });
 
   // ── 聊天 ─────────────────────────────────────────────────

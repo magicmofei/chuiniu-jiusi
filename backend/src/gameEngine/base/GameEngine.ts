@@ -58,6 +58,11 @@ export abstract class GameEngine {
       winner: this.room.winner,
       eliminatedPlayerIds: this.room.eliminatedPlayerIds,
       lastPunishment: this.room.lastPunishment,
+      bottleRemaining: this.room.players.reduce((acc, p) => {
+        acc[p.id] = p.bottles?.remaining.length ?? 0;
+        return acc;
+      }, {} as Record<string, number>),
+      pickingPlayerId: this.room.pickingPlayerId ?? null,
       rouletteChamber: this.room.roulette?.chamber ?? null,
     };
   }

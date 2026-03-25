@@ -41,6 +41,7 @@
         <span class="text-xs opacity-50">
           🎲×{{ player.diceCount }}
           <span v-if="player.handCount"> · 🃏×{{ player.handCount }}</span>
+          <span v-if="bottleRemaining !== null"> · 🍶×{{ bottleRemaining }}</span>
         </span>
       </div>
     </div>
@@ -52,6 +53,13 @@
 </template>
 
 <script setup lang="ts">
-import type { PlayerPublicView } from '../stores/gameStore';
-defineProps<{ player: PlayerPublicView; isMe: boolean; isCurrent: boolean }>();
+import { computed } from 'vue';
+import type { PlayerPublicView, RoomPublicView } from '../stores/gameStore';
+
+const props = defineProps<{ player: PlayerPublicView; isMe: boolean; isCurrent: boolean; room?: RoomPublicView | null }>();
+
+const bottleRemaining = computed(() => {
+  if (!props.room?.bottleRemaining) return null;
+  return props.room.bottleRemaining[props.player.id] ?? 0;
+});
 </script>

@@ -1,148 +1,131 @@
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4"
-    style="background:rgba(0,0,0,0.82);backdrop-filter:blur(6px)"
+    style="background:rgba(0,0,0,0.88);backdrop-filter:blur(8px)"
     @click.self="tryClose"
   >
-    <div class="card-ink p-7 w-full max-w-md relative overflow-hidden bounce-in">
+    <div class="modal-card relative overflow-hidden">
 
-      <!-- 水墨背景字 -->
-      <span class="absolute -right-4 -bottom-4 text-[8rem] opacity-[0.03] pointer-events-none select-none font-bold">
-        {{ result.bidSuccess ? '赢' : '输' }}
-      </span>
+      <!-- 水墨大字背景 -->
+      <div class="bg-char">{{ result.bidSuccess ? '赢' : '输' }}</div>
 
-      <!-- ───── 骰子模式：蒙汗药喝酒动画 ───── -->
+      <!-- ══ 骰子模式 ══ -->
       <template v-if="result.type==='dice'">
-        <!-- 标题 -->
-        <div class="text-center mb-4">
-          <p class="text-xl font-bold tracking-widest"
-            :style="result.bidSuccess?'color:var(--jade)':'color:var(--vermillion)'"
-          >{{ result.bidSuccess ? '叫牌成真！' : '吹牛败露！' }}</p>
-          <p class="text-xs mt-1 opacity-40">
-            喊话：{{ result.bid.quantity }} 个 {{ faceChar(result.bid.face) }} · 实际 {{ result.actualCount }} 个
+        <div class="text-center mb-3">
+          <p class="result-label" :class="result.bidSuccess ? 'c-jade' : 'c-red'">
+            {{ result.bidSuccess ? '叫牌成真！' : '吹牛败露！' }}
           </p>
+          <p class="hint-xs">喊话：{{ result.bid.quantity }} 个 {{ faceChar(result.bid.face) }} · 实际 {{ result.actualCount }} 个</p>
         </div>
 
-        <!-- 全员亮骰 -->
-        <div class="space-y-2 mb-5 max-h-36 overflow-y-auto">
+        <!-- 亮骰区 -->
+        <div class="dice-reveal">
           <div v-for="pd in result.allDice" :key="pd.playerId"
-            class="flex items-center gap-2 px-2 py-1 rounded-lg"
-            :style="result.loserIds.includes(pd.playerId)?'background:rgba(192,57,43,0.1)':''"
+            class="dice-row" :class="result.loserIds.includes(pd.playerId) ? 'loser-row' : ''"
           >
-            <span class="text-xs w-16 truncate opacity-60 flex-shrink-0">{{ pd.playerName }}</span>
+            <span class="dice-name">{{ pd.playerName }}</span>
             <span v-for="(d,i) in pd.dice" :key="i"
-              class="text-xl transition-all duration-300"
-              :style="(d===result.bid.face||d===1)?'color:var(--gold);filter:drop-shadow(0 0 6px rgba(212,168,67,0.8))':'color:rgba(255,255,255,0.15)'"
+              class="dice-pip" :class="(d===result.bid.face||d===1) ? 'pip-match' : 'pip-dim'"
             >{{ faceChar(d) }}</span>
           </div>
         </div>
 
-        <!-- ★ 喝酒动画区 ★ -->
-        <div class="drink-stage rounded-2xl py-6 px-4 text-center mb-4 relative overflow-hidden"
-          :class="drinkPhase === 'poisoned' ? 'stage-poison' : drinkPhase === 'safe' ? 'stage-safe' : 'stage-idle'"
-        >
-          <!-- 背景烟雾（中毒时） -->
-          <div v-if="drinkPhase === 'poisoned'" class="smoke-wrap">
-            <span class="smoke">💨</span>
-            <span class="smoke smoke-2">💨</span>
+        <!-- 喝酒动画舞台 -->
+        <div class="drink-stage" :class="stageClass">
+          <div v-if="dPhase==='poisoned'" class="smoke-wrap">
+            <div class="smoke s1">💨</div>
+            <div class="smoke s2">💨</div>
+            <div class="smoke s3">💨</div>
           </div>
-
-          <!-- 动画主体 -->
-          <transition name="drink-anim" mode="out-in">
-            <!-- 阶段0：等待 -->
-            <div v-if="drinkPhase === 'idle'" key="idle" class="flex flex-col items-center gap-2">
-              <span class="text-5xl">🍶</span>
-              <p class="text-sm opacity-50 tracking-widest">{{ result.punishment.loserName }} 须饮此杯…</p>
+          <transition name="dp" mode="out-in">
+            <div v-if="dPhase==='idle'" key="d0" class="stage-inner">
+              <div class="emoji-wrap">🍶</div>
+              <p class="stage-hint">{{ dicePunishment?.loserName ?? '该玩家' }} 须饮此杯…</p>
             </div>
-
-            <!-- 阶段1：举杯 -->
-            <div v-else-if="drinkPhase === 'lift'" key="lift" class="flex flex-col items-center gap-2">
-              <span class="text-5xl cup-lift">🍶</span>
-              <p class="text-sm tracking-widest" style="color:var(--gold)">举杯——</p>
+            <div v-else-if="dPhase==='lift'" key="d1" class="stage-inner">
+              <div class="emoji-wrap anim-lift">🍶</div>
+              <p class="stage-hint c-gold">举杯——</p>
             </div>
-
-            <!-- 阶段2：仰头喝 -->
-            <div v-else-if="drinkPhase === 'drink'" key="drink" class="flex flex-col items-center gap-2">
-              <span class="text-5xl cup-tilt">🍶</span>
-              <p class="text-sm tracking-widest" style="color:var(--parchment)">咕嘟咕嘟…</p>
+            <div v-else-if="dPhase==='drink'" key="d2" class="stage-inner">
+              <div class="emoji-wrap anim-tilt">🍶</div>
+              <p class="stage-hint">咕嘟咕嘟…</p>
             </div>
-
-            <!-- 阶段3a：中毒睡倒 -->
-            <div v-else-if="drinkPhase === 'poisoned'" key="poisoned" class="flex flex-col items-center gap-3">
-              <span class="text-6xl fall-down">😵</span>
-              <p class="text-base font-bold tracking-widest" style="color:var(--vermillion)">蒙汗药！昏倒！</p>
-              <p class="text-xs opacity-60">
-                {{ result.punishment.loserName }}
-                {{ result.punishment.eliminated ? ' 已被淘汰！' : ' 少一颗骰子，剩 ' + (result.room.players.find(p => p.id === result.punishment.loserId)?.diceCount ?? 0) + ' 颗' }}
+            <div v-else-if="dPhase==='poisoned'" key="d3" class="stage-inner">
+              <div class="emoji-wrap emoji-lg anim-fall">😵</div>
+              <p class="stage-label c-red">蒙汗药！昏倒！</p>
+              <p class="stage-sub">
+                {{ dicePunishment?.loserName ?? '该玩家' }}
+                <span v-if="dicePunishment?.eliminated">已被淘汰！</span>
+                <span v-else>少一颗骰子，剩 {{ result.room.players.find(p => p.id === (dicePunishment?.loserId ?? ''))?.diceCount ?? 0 }} 颗</span>
               </p>
             </div>
-
-            <!-- 阶段3b：安全 -->
-            <div v-else-if="drinkPhase === 'safe'" key="safe" class="flex flex-col items-center gap-2">
-              <span class="text-6xl safe-bounce">😮‍💨</span>
-              <p class="text-base font-bold tracking-widest" style="color:var(--jade)">只是普通酒！</p>
-              <p class="text-xs opacity-60">{{ result.punishment.loserName }} 少一颗骰子</p>
+            <div v-else-if="dPhase==='safe'" key="d4" class="stage-inner">
+              <div class="emoji-wrap emoji-lg anim-safe">😮‍💨</div>
+              <p class="stage-label c-jade">只是普通酒！</p>
+              <p class="stage-sub">{{ dicePunishment?.loserName ?? '该玩家' }} 少一颗骰子</p>
             </div>
           </transition>
         </div>
       </template>
 
-      <!-- ───── 扑克模式：俄罗斯轮盘 ───── -->
+      <!-- ══ 扑克模式 ══ -->
       <template v-else-if="result.type==='card'">
-        <div class="text-center mb-5">
-          <p class="text-5xl mb-2">{{ result.bidSuccess ? '✅' : '❌' }}</p>
-          <p class="text-xl font-bold tracking-widest"
-            :style="result.bidSuccess?'color:var(--jade)':'color:var(--vermillion)'"
-          >{{ result.bidSuccess ? '叫牌成真！' : '吹牛败露！' }}</p>
-          <p class="text-sm mt-1 opacity-60">
-            实际：[{{ result.bid.actualCards?.join(' · ') }}]
+        <div class="text-center mb-3">
+          <p class="result-label" :class="result.bidSuccess ? 'c-jade' : 'c-red'">
+            {{ result.bidSuccess ? '叫牌成真！' : '吹牛败露！' }}
           </p>
+          <p class="hint-xs">实际出牌：{{ result.bid.actualCards?.map(suitLabel).join(' · ') ?? '—' }}</p>
         </div>
 
-        <!-- 轮盘动画 -->
-        <div class="flex justify-center mb-5">
-          <div class="relative w-36 h-36">
-            <svg class="absolute inset-0" viewBox="0 0 144 144" :class="spinning?'roulette-spin':''">
-              <circle v-for="n in 6" :key="n"
-                cx="72" cy="72"
-                :r="54"
-                fill="none"
-                :stroke="chamberColor(n-1)"
-                stroke-width="16"
-                :stroke-dasharray="`${Math.PI*54/3} ${Math.PI*54*5/3}`"
-                :stroke-dashoffset="-Math.PI*54*(n-1)/3"
-              />
-            </svg>
-            <div class="absolute inset-0 flex items-center justify-center">
-              <span class="text-4xl" :class="result.punishment.poisoned?'animate-bounce':''">
-                {{ result.punishment.poisoned ? '☠️' : '🏮' }}
-              </span>
-            </div>
+        <div class="drink-stage" :class="stageClass">
+          <div v-if="cPhase==='poisoned'" class="smoke-wrap">
+            <div class="smoke s1">💨</div>
+            <div class="smoke s2">💨</div>
+            <div class="smoke s3">☠️</div>
           </div>
-        </div>
 
-        <div class="rounded-xl p-4 text-center"
-          :style="result.punishment.poisoned
-            ? 'background:rgba(192,57,43,0.2);border:1px solid rgba(192,57,43,0.4)'
-            : 'background:rgba(78,139,111,0.15);border:1px solid rgba(78,139,111,0.3)'"
-        >
-          <p class="text-lg mb-1">{{ result.punishment.poisoned ? '💀 中毒！' : '🍀 安全！' }}</p>
-          <p class="text-sm">
-            格{{ result.punishment.chamberBefore }}→格{{ result.punishment.chamberAfter }}
-            · {{ result.punishment.loserName }} 剩 {{ result.punishment.livesRemaining }} 命
-            {{ result.punishment.eliminated ? ' (已淘汰)' : '' }}
-          </p>
+          <transition name="dp" mode="out-in">
+            <div v-if="cPhase==='idle'" key="c0" class="stage-inner">
+              <div class="emoji-wrap">🍶</div>
+              <p class="stage-hint">{{ loserName }} 选好一瓶，准备喝下…</p>
+            </div>
+            <div v-else-if="cPhase==='lift'" key="c1" class="stage-inner">
+              <div class="emoji-wrap anim-lift">🍶</div>
+              <p class="stage-hint c-gold">举杯——</p>
+            </div>
+            <div v-else-if="cPhase==='drink'" key="c2" class="stage-inner">
+              <div class="emoji-wrap anim-tilt">🍶</div>
+              <p class="stage-hint">咕嘟咕嘟…</p>
+            </div>
+            <div v-else-if="cPhase==='reveal'" key="c3" class="stage-inner">
+              <div class="emoji-wrap">❓</div>
+              <p class="stage-hint c-gold">酒劲上头，结果即将揭晓…</p>
+            </div>
+            <div v-else-if="cPhase==='poisoned'" key="c4" class="stage-inner">
+              <div class="emoji-wrap emoji-lg anim-fall">😵</div>
+              <p class="stage-label c-red">蒙汗药！昏倒！</p>
+              <p class="stage-sub">
+                {{ loserName }}
+                {{ isEliminated ? '已被淘汰！' : '还剩 ' + livesRemaining + ' 命' }}
+              </p>
+            </div>
+            <div v-else-if="cPhase==='safe'" key="c5" class="stage-inner">
+              <div class="emoji-wrap emoji-lg anim-safe">😮‍💨</div>
+              <p class="stage-label c-jade">只是普通酒！</p>
+              <p class="stage-sub">{{ loserName }} 平安无事，剩余酒瓶 {{ remainingCount }}</p>
+            </div>
+          </transition>
         </div>
       </template>
 
-      <button @click="tryClose" class="btn-gold w-full mt-5">
-        {{ canClose ? (result.room.phase==='gameOver'?'查看结果':'继续') : `${countdown}秒后可继续...` }}
+      <button @click="tryClose" class="btn-continue">
+        {{ canClose ? (result.room.phase==='gameOver' ? '查看结果' : '继续') : `${countdown} 秒后可继续…` }}
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import type { ChallengeResult } from '../stores/gameStore';
 import { sound } from '../utils/useSound';
 import { inkSplash, fireConfetti } from '../utils/useConfetti';
@@ -150,148 +133,216 @@ import { inkSplash, fireConfetti } from '../utils/useConfetti';
 const props = defineProps<{ result: ChallengeResult }>();
 const emit  = defineEmits<{ close: [] }>();
 
-const spinning  = ref(false);
 const canClose  = ref(false);
-const countdown = ref(3);
+const countdown = ref(5);
 
-// 骰子模式喝酒动画阶段
-type DrinkPhase = 'idle' | 'lift' | 'drink' | 'poisoned' | 'safe';
-const drinkPhase = ref<DrinkPhase>('idle');
+type DPhase = 'idle'|'lift'|'drink'|'poisoned'|'safe';
+type CPhase = 'idle'|'lift'|'drink'|'reveal'|'poisoned'|'safe';
+const dPhase = ref<DPhase>('idle');
+const cPhase = ref<CPhase>('idle');
 
-function faceChar(f: number) { return ['⚀','⚁','⚂','⚃','⚄','⚅'][f-1]??'?'; }
-function chamberColor(n: number) {
-  if (props.result.type !== 'card') return '#333';
-  const after = props.result.punishment.chamberAfter;
-  if (n === after) return props.result.punishment.poisoned ? '#c0392b' : '#4e8b6f';
-  if (n < after) return 'rgba(255,255,255,0.15)';
-  return 'rgba(255,255,255,0.05)';
+const stageClass = computed(() => {
+  const p = props.result.type === 'dice' ? dPhase.value : cPhase.value;
+  if (p === 'poisoned') return 'stage-poison';
+  if (p === 'safe')     return 'stage-safe';
+  return 'stage-idle';
+});
+
+function faceChar(f: number) { return ['⚀','⚁','⚂','⚃','⚄','⚅'][f-1] ?? '?'; }
+function suitLabel(s: string) {
+  return ({ huadiao:'花雕', nverhong:'女儿红', zhuyeqing:'竹叶青', wild:'赖子' } as Record<string,string>)[s] ?? s;
 }
 
+const dicePunishment = computed(() => props.result.type === 'dice' ? props.result.punishment : null);
+const cardPunishment = computed(() => props.result.type === 'card' ? props.result.punishment : null);
+const loserName = computed(() => cardPunishment.value?.loserName ?? props.result.loserNames?.[0] ?? '该玩家');
+const livesRemaining = computed(() => cardPunishment.value?.livesRemaining ?? 1);
+const isEliminated = computed(() => cardPunishment.value?.eliminated ?? false);
+const remainingCount = computed(() => cardPunishment.value?.remainingCount ?? 0);
 function tryClose() { if (canClose.value) emit('close'); }
 
-// 骰子模式：分步执行喝酒动画
-function runDrinkAnimation() {
-  const poisoned = (props.result as any).punishment.eliminated ||
-                   (props.result as any).punishment.livesLost > 0;
+function runDiceAnim() {
+  const poi = (props.result as any).punishment.livesLost > 0;
+  setTimeout(() => { dPhase.value = 'lift';                           sound.bidConfirm();    },  600);
+  setTimeout(() => { dPhase.value = 'drink';                          sound.glassCrash();    }, 1600);
+  setTimeout(() => { dPhase.value = poi ? 'poisoned' : 'safe';
+    if (poi) { sound.poisoned(); inkSplash(); } else { sound.guzheng(); fireConfetti(); }
+  }, 3000);
+}
 
-  // 0ms  → idle（已是默认值）
-  // 500ms → lift（举杯）
-  setTimeout(() => { drinkPhase.value = 'lift'; sound.guzheng(); }, 500);
-  // 1200ms → drink（仰头喝）
-  setTimeout(() => { drinkPhase.value = 'drink'; }, 1200);
-  // 2200ms → 结果（中毒 or 安全）
-  setTimeout(() => {
-    if (poisoned) {
-      drinkPhase.value = 'poisoned';
-      sound.poisoned();
-      inkSplash();
-    } else {
-      drinkPhase.value = 'safe';
-      sound.guzheng();
-      if (!poisoned) fireConfetti();
-    }
-  }, 2200);
+function runCardAnim() {
+  const poi = props.result.type === 'card' && !!props.result.punishment?.poisoned;
+  setTimeout(() => { cPhase.value = 'lift';                           sound.bidConfirm();    },  600);
+  setTimeout(() => { cPhase.value = 'drink';                          sound.glassCrash();    }, 1600);
+  setTimeout(() => { cPhase.value = 'reveal';                         sound.rouletteClick(); }, 2800);
+  setTimeout(() => { cPhase.value = poi ? 'poisoned' : 'safe';
+    if (poi) { sound.poisoned(); inkSplash(); } else { sound.guzheng(); fireConfetti(); }
+  }, 4300);
 }
 
 let timer: ReturnType<typeof setInterval>;
 onMounted(() => {
-  if (props.result.type === 'dice') {
-    runDrinkAnimation();
-    // 扑克模式若之前有 eliminated 音效，骰子模式在 runDrinkAnimation 内处理
-  } else {
-    // 扑克模式
-    spinning.value = true;
-    sound.rouletteClick();
-    setTimeout(() => {
-      spinning.value = false;
-      if (props.result.type === 'card' && props.result.punishment.poisoned) {
-        sound.poisoned();
-        inkSplash();
-      } else {
-        sound.guzheng();
-        fireConfetti();
-      }
-    }, 900);
-  }
-
-  // 倒计时（给足动画时间，3秒）
+  props.result.type === 'dice' ? runDiceAnim() : runCardAnim();
   timer = setInterval(() => {
     countdown.value--;
-    if (countdown.value <= 0) {
-      canClose.value = true;
-      clearInterval(timer);
-    }
+    if (countdown.value <= 0) { canClose.value = true; clearInterval(timer); }
   }, 1000);
 });
-
 onUnmounted(() => clearInterval(timer));
 </script>
 
 <style scoped>
-/* ── 喝酒舞台背景 ── */
-.stage-idle   { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.07); }
-.stage-poison { background: rgba(100,20,20,0.35); border: 1px solid rgba(192,57,43,0.5); transition: background 0.6s, border 0.6s; }
-.stage-safe   { background: rgba(20,70,45,0.35); border: 1px solid rgba(78,139,111,0.5); transition: background 0.6s, border 0.6s; }
-
-/* ── 喝酒动画过渡 ── */
-.drink-anim-enter-active { transition: all 0.4s cubic-bezier(0.34,1.56,0.64,1); }
-.drink-anim-leave-active { transition: all 0.2s ease; }
-.drink-anim-enter-from  { opacity: 0; transform: scale(0.8) translateY(12px); }
-.drink-anim-leave-to    { opacity: 0; transform: scale(0.9) translateY(-8px); }
-
-/* ── 举杯动画 ── */
-@keyframes cup-lift {
-  0%   { transform: translateY(0) rotate(0deg); }
-  40%  { transform: translateY(-14px) rotate(-8deg); }
-  100% { transform: translateY(-10px) rotate(-6deg); }
+/* ══ 弹窗容器 ══ */
+.modal-card {
+  width:100%; max-width:440px;
+  background:rgba(10,8,4,0.94);
+  border:1px solid rgba(212,168,67,0.25);
+  border-radius:1rem;
+  padding:1.75rem;
+  backdrop-filter:blur(12px);
+  animation:modalIn .45s cubic-bezier(0.34,1.56,0.64,1) forwards;
 }
-.cup-lift { display: inline-block; animation: cup-lift 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards; }
-
-/* ── 仰头喝动画 ── */
-@keyframes cup-tilt {
-  0%   { transform: translateY(-10px) rotate(-6deg); }
-  30%  { transform: translateY(-18px) rotate(-35deg); }
-  60%  { transform: translateY(-18px) rotate(-40deg); }
-  100% { transform: translateY(-14px) rotate(-35deg); }
+@keyframes modalIn {
+  0%   { opacity:0; transform:scale(0.72) translateY(20px); }
+  65%  { opacity:1; transform:scale(1.04); }
+  100% { transform:scale(1) translateY(0); }
 }
-.cup-tilt { display: inline-block; animation: cup-tilt 0.7s ease-in-out forwards; }
-
-/* ── 醉倒动画 ── */
-@keyframes fall-down {
-  0%   { transform: rotate(0deg) scale(1); }
-  20%  { transform: rotate(-15deg) scale(1.1); }
-  50%  { transform: rotate(80deg) scale(0.95) translateY(4px); }
-  70%  { transform: rotate(88deg) scale(0.93) translateY(6px); }
-  85%  { transform: rotate(84deg) scale(0.95) translateY(5px); }
-  100% { transform: rotate(86deg) scale(0.94) translateY(6px); }
-}
-.fall-down { display: inline-block; animation: fall-down 0.9s cubic-bezier(0.36,0.07,0.19,0.97) forwards; }
-
-/* ── 安全跳动 ── */
-@keyframes safe-bounce {
-  0%,100% { transform: translateY(0) scale(1); }
-  30%     { transform: translateY(-16px) scale(1.15); }
-  55%     { transform: translateY(-6px) scale(1.05); }
-  75%     { transform: translateY(-10px) scale(1.1); }
-}
-.safe-bounce { display: inline-block; animation: safe-bounce 0.8s ease forwards; }
-
-/* ── 毒烟飘散 ── */
-.smoke-wrap { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-@keyframes smoke-rise {
-  0%   { opacity: 0.7; transform: translate(-50%,-50%) scale(0.5); }
-  100% { opacity: 0;   transform: translate(-50%,-160%) scale(2); }
-}
-.smoke {
-  position: absolute; left: 35%; top: 50%; font-size: 2rem;
-  animation: smoke-rise 1.4s ease-out infinite;
-}
-.smoke-2 {
-  left: 60%; animation-delay: 0.5s; font-size: 1.5rem;
+.bg-char {
+  position:absolute; right:-1rem; bottom:-1rem;
+  font-size:8rem; font-weight:700;
+  opacity:0.03; pointer-events:none; user-select:none;
 }
 
-/* ── 旧版 ── */
-.pop-enter-active { animation: bounceIn 0.4s; }
-@keyframes spin-slow { from{transform:rotate(0)} to{transform:rotate(720deg)} }
-.animate-spin-slow { animation: spin-slow 1.5s ease-out forwards; }
-</style>
+/* ══ 颜色 ══ */
+.result-label { font-size:1.25rem; font-weight:700; letter-spacing:.15em; }
+.hint-xs      { font-size:.72rem; opacity:.4; margin-top:.25rem; }
+.c-jade { color:#4e8b6f; }
+.c-red  { color:#c0392b; }
+.c-gold { color:#d4a843; }
+
+/* ══ 亮骰区 ══ */
+.dice-reveal { display:flex; flex-direction:column; gap:.3rem; margin-bottom:1rem; max-height:8.5rem; overflow-y:auto; }
+.dice-row    { display:flex; align-items:center; gap:.4rem; padding:.2rem .5rem; border-radius:.5rem; }
+.loser-row   { background:rgba(192,57,43,0.13); }
+.dice-name   { font-size:.68rem; width:3.8rem; flex-shrink:0; opacity:.5; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.dice-pip    { font-size:1.25rem; line-height:1; }
+.pip-match   { color:#d4a843; filter:drop-shadow(0 0 5px rgba(212,168,67,.8)); }
+.pip-dim     { color:rgba(255,255,255,.13); }
+
+/* ══ 动画舞台 ══ */
+.drink-stage {
+  position:relative; overflow:hidden;
+  border-radius:1rem; padding:1.5rem 1rem;
+  text-align:center; margin-bottom:1rem;
+  min-height:140px;
+  border:1px solid transparent;
+  transition: background .7s ease, border-color .7s ease;
+}
+.stage-idle   { background:rgba(0,0,0,.42);     border-color:rgba(255,255,255,.07); }
+.stage-poison { background:rgba(80,8,8,.6);      border-color:rgba(192,57,43,.65); }
+.stage-safe   { background:rgba(10,50,30,.6);    border-color:rgba(78,139,111,.65); }
+
+.stage-inner  { display:flex; flex-direction:column; align-items:center; gap:.55rem; position:relative; z-index:1; }
+.stage-hint   { font-size:.8rem; letter-spacing:.1em; opacity:.7; }
+.stage-label  { font-size:1rem; font-weight:700; letter-spacing:.12em; }
+.stage-sub    { font-size:.72rem; opacity:.6; }
+
+/* ══ Emoji 容器（必须 display:block/inline-block 才能 transform）══ */
+.emoji-wrap {
+  display:inline-block;
+  font-size:3rem; line-height:1;
+  will-change:transform;
+}
+.emoji-wrap.emoji-lg { font-size:4rem; }
+.emoji-sm {
+  display:inline-block;
+  font-size:1.5rem; line-height:1;
+  will-change:transform;
+}
+.emoji-sm.faded { opacity:.22; }
+.deco-row { display:flex; gap:.5rem; align-items:center; justify-content:center; margin-top:.3rem; }
+
+/* ══ Vue transition ══ */
+.dp-enter-active { transition:all .4s cubic-bezier(0.34,1.56,0.64,1); }
+.dp-leave-active { transition:all .18s ease; }
+.dp-enter-from   { opacity:0; transform:scale(.72) translateY(16px); }
+.dp-leave-to     { opacity:0; transform:scale(.9)  translateY(-8px); }
+
+/* ══ 举杯 ══ */
+@keyframes kLift {
+  0%   { transform:translateY(0)     rotate(0deg); }
+  50%  { transform:translateY(-20px) rotate(-12deg); }
+  100% { transform:translateY(-14px) rotate(-8deg); }
+}
+.anim-lift { animation:kLift .6s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+
+/* ══ 仰喝 ══ */
+@keyframes kTilt {
+  0%   { transform:translateY(-14px) rotate(-8deg); }
+  40%  { transform:translateY(-24px) rotate(-42deg); }
+  100% { transform:translateY(-20px) rotate(-38deg); }
+}
+.anim-tilt { animation:kTilt .8s ease-in-out forwards; }
+
+/* ══ 醉倒 ══ */
+@keyframes kFall {
+  0%   { transform:rotate(0deg)   scale(1); }
+  20%  { transform:rotate(-20deg) scale(1.15); }
+  50%  { transform:rotate(85deg)  scale(.93) translateY(6px); }
+  75%  { transform:rotate(92deg)  scale(.91) translateY(8px); }
+  88%  { transform:rotate(87deg)  scale(.93) translateY(7px); }
+  100% { transform:rotate(89deg)  scale(.92) translateY(8px); }
+}
+.anim-fall { animation:kFall 1.1s cubic-bezier(0.36,0.07,0.19,0.97) forwards; }
+
+/* ══ 安全弹跳 ══ */
+@keyframes kSafe {
+  0%,100% { transform:translateY(0)    scale(1); }
+  30%     { transform:translateY(-22px) scale(1.2); }
+  55%     { transform:translateY(-9px)  scale(1.07); }
+  76%     { transform:translateY(-15px) scale(1.13); }
+}
+.anim-safe { animation:kSafe 1s ease forwards; }
+
+/* ══ 毒烟 ══ */
+.smoke-wrap { position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:0; }
+@keyframes kSmoke {
+  0%   { opacity:.85; transform:translateY(0)    scale(.4); }
+  100% { opacity:0;   transform:translateY(-90px) scale(2.4); }
+}
+.smoke { position:absolute; display:block; animation:kSmoke 1.6s ease-out infinite; }
+.s1 { font-size:1.9rem; left:18%; top:65%; animation-delay:0s; }
+.s2 { font-size:1.5rem; left:58%; top:68%; animation-delay:.5s; }
+.s3 { font-size:1.2rem; left:40%; top:60%; animation-delay:1s; }
+
+/* ══ 轮盘 ══ */
+.roulette-wrap   { position:relative; width:120px; height:120px; }
+.roulette-svg    { position:absolute; inset:0; width:100%; height:100%; }
+.roulette-center { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:2.2rem; }
+@keyframes kSpin  { 0%{transform:rotate(0)} 100%{transform:rotate(720deg)} }
+.anim-spin { animation:kSpin 1.4s cubic-bezier(0.2,0.8,0.4,1) forwards; }
+
+/* ══ 格子状态条 ══ */
+.chamber-bar  { display:flex; gap:.35rem; justify-content:center; margin-bottom:.75rem; }
+.chamber-cell {
+  width:2rem; height:2rem; border-radius:.4rem;
+  display:flex; align-items:center; justify-content:center;
+  font-size:.7rem; font-weight:700;
+  background:rgba(255,255,255,.06); color:rgba(255,255,255,.3);
+  transition:all .5s ease;
+}
+.cell-past   { background:rgba(255,255,255,.15); color:rgba(255,255,255,.6); }
+.cell-safe   { background:#4e8b6f; color:#fff; box-shadow:0 0 12px rgba(78,139,111,.8); }
+.cell-poison { background:#c0392b; color:#fff; box-shadow:0 0 14px rgba(192,57,43,.9); }
+
+/* ══ 继续按钮 ══ */
+.btn-continue {
+  display:block; width:100%; margin-top:1.2rem;
+  padding:.65rem 0; border-radius:.5rem;
+  border:1px solid #92400e; color:#d4a843;
+  font-weight:600; letter-spacing:.15em;
+  background:transparent; cursor:pointer;
+  transition:all .2s;
+}
+.btn-continue:hover { background:rgba(212,168,67,.15); border-color:#d4a843; }
+</style> 
