@@ -189,15 +189,13 @@ export class DiceGame extends GameEngine {
   // 私有：蒙汗药惩罚逻辑
   // ══════════════════════════════════════════════════════════
   private applyMengHanPunishment(loser: typeof this.room.players[0]): MengHanPunishment {
-    const before = { lives: loser.lives, dice: loser.diceCount };
-
+    // 一命制：每次输了喝蒙汗药，骰子 -1；骰子归0即扣1命（唯一的命），直接淘汰
     loser.diceCount -= 1;
     let livesLost = 0;
     if (loser.diceCount <= 0) {
       loser.lives -= 1;
       livesLost = 1;
-      // 若还有命则重置5颗骰子，否则骰子归0等待淘汰
-      loser.diceCount = loser.lives > 0 ? 5 : 0;
+      loser.diceCount = 0; // 一命制无需重置，等待 eliminateDead 清除
     }
 
     return {

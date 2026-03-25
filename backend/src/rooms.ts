@@ -9,7 +9,7 @@ import { CardGame } from './gameEngine/CardGame';
 import { GameEngine } from './gameEngine/base/GameEngine';
 
 const MAX_PLAYERS = 4;
-const INITIAL_LIVES = 2;
+const INITIAL_LIVES = 1;
 const INITIAL_DICE = 5;
 const RECONNECT_TIMEOUT_MS = 5000; // 5秒内可断线重连
 const AI_NAMES = ['酒仙甲', '骗子乙', '牛皮丙', '吹风丁'];
