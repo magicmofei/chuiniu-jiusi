@@ -37,7 +37,13 @@ export class CardGame extends GameEngine {
     this.room.pickingPlayerId = null;
     this.room.round += 1;
 
-    const shuffled = this.shuffle([...DECK]);
+    // 按实际玩家数生成足够的牌（每人至少 HAND_SIZE 张）
+    const playerCount = this.room.players.length;
+    const needed = playerCount * HAND_SIZE;
+    // 循环复制 DECK 直到够用
+    const baseDeck: CardSuit[] = [];
+    while (baseDeck.length < needed) baseDeck.push(...DECK);
+    const shuffled = this.shuffle(baseDeck.slice(0, needed));
     this.room.players.forEach((p, i) => {
       p.hand = shuffled.slice(i * HAND_SIZE, (i + 1) * HAND_SIZE);
     });
@@ -56,6 +62,7 @@ export class CardGame extends GameEngine {
   }
 
   // ── CALLING：出牌 ──────────────────────────────────────────
+  // 加码规则：声称数量必须 > 上家声称数量（牌种不限）
   placeBid(playerId: string, bidData: unknown): string | null {
     if (this.room.phase !== 'bidding') return '当前不是出牌阶段';
     const { cards, claimSuit, claimQuantity } =
@@ -66,6 +73,14 @@ export class CardGame extends GameEngine {
     if (!Array.isArray(cards) || cards.length < 1 || cards.length > 3) return '每次须出1到3张牌';
     if (claimQuantity < 1 || claimQuantity > 3) return '声称数量须为1-3';
     if (!SUITS.includes(claimSuit)) return `主牌种类无效（可选：${SUITS.join('/')}）`;
+
+    // ── 加码验证：声称数量必须严格大于上家 ──────────────────
+    const prev = this.room.currentCardBid;
+    if (prev) {
+      if (claimQuantity <= prev.quantity) {
+        return `出牌数量须大于上家（上家喊了 ${prev.quantity} 张，你须喊 ${prev.quantity + 1} 张以上）`;
+      }
+    }
 
     const handCopy = [...currentPlayer.hand];
     for (const c of cards) {
@@ -194,14 +209,18 @@ export class CardGame extends GameEngine {
     if (!player || player.hand.length === 0) return { action: 'challenge' };
     const master = this.room.masterSuit!;
     const prev = this.room.currentCardBid;
-    if (!prev) return this.aiMakeBid(player, master);
+
+    // 若上家喊了 3 张（最大值），无法加码，必须质疑
+    if (prev && prev.quantity >= 3) return { action: 'challenge' };
+
+    if (!prev) return this.aiMakeBid(player, master, null);
 
     const totalCards = this.room.players.reduce((s, p) => s + p.hand.length, 0);
     const expectedMaster = totalCards * (8 / 20);
     const overRatio = prev.quantity / Math.max(expectedMaster, 0.5);
     const challengeProb = Math.min(0.85, Math.max(0.05, (overRatio - 0.8) * 0.6));
     if (Math.random() < challengeProb) return { action: 'challenge' };
-    return this.aiMakeBid(player, master);
+    return this.aiMakeBid(player, master, prev.quantity);
   }
 
   // AI 选酒：随机选一瓶
@@ -220,14 +239,35 @@ export class CardGame extends GameEngine {
     };
   }
 
-  private aiMakeBid(player: Player, master: CardSuit): { action: 'bid'; data: unknown } {
+  private aiMakeBid(player: Player, master: CardSuit, prevQty: number | null): { action: 'bid'; data: unknown } {
+    // 最低必须喊出的数量
+    const minQty = prevQty !== null ? prevQty + 1 : 1;
+    // 上限：手牌数 且 不超过规则上限3
+    const maxQty = Math.min(player.hand.length, 3);
+
+    // 若连最低加码都无法满足，质疑（兜底，正常不应到这里）
+    if (minQty > maxQty) return { action: 'challenge' };
+
+    const claimQuantity = this.secureRandInt(minQty, maxQty);
+
     const masterCards = player.hand.filter(c => c === master || c === 'wild');
-    const otherCards = player.hand.filter(c => c !== master && c !== 'wild');
-    if (masterCards.length > 0) {
-      const count = Math.min(masterCards.length, this.secureRandInt(1, 2));
-      return { action: 'bid', data: { cards: masterCards.slice(0, count), claimSuit: master, claimQuantity: count } };
+    const otherCards  = player.hand.filter(c => c !== master && c !== 'wild');
+
+    // 优先打主牌/万能牌，数量不够则混入非主牌
+    if (masterCards.length >= claimQuantity) {
+      return { action: 'bid', data: {
+        cards: masterCards.slice(0, claimQuantity),
+        claimSuit: master,
+        claimQuantity,
+      }};
     }
-    return { action: 'bid', data: { cards: [otherCards[0]], claimSuit: master, claimQuantity: this.secureRandInt(1, 2) } };
+    // 手里主牌不足，用非主牌凑数（虚张声势）
+    const combined = [...masterCards, ...otherCards].slice(0, claimQuantity);
+    return { action: 'bid', data: {
+      cards: combined,
+      claimSuit: master,
+      claimQuantity,
+    }};
   }
 
   private shuffle<T>(arr: T[]): T[] {

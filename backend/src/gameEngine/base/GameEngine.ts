@@ -44,7 +44,9 @@ export abstract class GameEngine {
   toPublicView(): RoomPublicView {
     return {
       roomId: this.room.roomId,
+      hostId: this.room.hostId,
       mode: this.room.mode,
+      spectators: this.room.spectators,
       players: this.room.players.map(this.playerToPublic),
       phase: this.room.phase,
       round: this.room.round,

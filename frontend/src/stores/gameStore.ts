@@ -41,9 +41,14 @@ export interface BottlePunishment {
 }
 export type PunishmentResult = MengHanPunishment | BottlePunishment;
 
+export interface Spectator {
+  id: string; name: string; avatar: string;
+}
+
 export interface RoomPublicView {
-  roomId: string; mode: GameMode;
+  roomId: string; hostId: string; mode: GameMode;
   players: PlayerPublicView[];
+  spectators: Spectator[];
   phase: GamePhase; round: number; currentPlayerIndex: number;
   currentDiceBid: DiceBid | null;
   currentCardBid: CardBid | null;
@@ -90,7 +95,9 @@ export const useGameStore = defineStore('game', () => {
   const connected   = ref(false);
   const socket      = ref<Socket | null>(null);
   const showPunishment = ref(false);
-  const gameMode    = ref<GameMode>('dice');
+  const gameMode    = ref<GameMode>('card');
+  const openingQuote = ref('');
+  const isSpectator = ref(false);
 
   // ── 聊天 & 日志 ──────────────────────────────────────────
   interface ChatMsg {
@@ -126,11 +133,74 @@ export const useGameStore = defineStore('game', () => {
     return room.value.players[room.value.currentPlayerIndex] ?? null;
   });
 
+  // ── 观战连接 ────────────────────────────────────────────
+  function spectate(name: string, avatar: string, targetRoomId: string) {
+    myName.value   = name;
+    myAvatar.value = avatar;
+    isSpectator.value = true;
+
+    const s = connectSocket();
+    socket.value = s;
+
+    s.on('connect', () => {
+      connected.value = true;
+      myId.value = s.id ?? '';
+      s.emit('room:spectate', { name, avatar, roomId: targetRoomId }, (res: any) => {
+        if (res.success) {
+          roomId.value = res.roomId;
+          addLog(`已进入观战 ${res.roomId}`);
+        } else {
+          errorMsg.value = res.error ?? '观战失败';
+        }
+      });
+    });
+
+    s.on('disconnect', () => { connected.value = false; });
+    s.on('error', (msg: string) => { errorMsg.value = msg; });
+    s.on('room:update', (r: RoomPublicView) => { room.value = r; gameMode.value = r.mode; });
+    s.on('game:stateUpdate', (r: RoomPublicView) => { room.value = r; });
+    s.on('game:start', (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardSuit[] }) => {
+      room.value = data.room; addLog(`游戏开始 第${data.room.round}回合`);
+    });
+    s.on('game:roundStart', (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardSuit[] }) => {
+      room.value = data.room; addLog(`第${data.room.round}回合开始`);
+    });
+    s.on('player:challenge', (result: ChallengeResult) => {
+      challengeResult.value = result; room.value = result.room;
+      if (result.type === 'dice') showPunishment.value = true;
+    });
+    s.on('game:over', (data: { winner: string; room: RoomPublicView }) => {
+      room.value = data.room; winnerBanner.value = true; addLog(`🏆 游戏结束！酒霸：${data.winner}`);
+    });
+    s.on('card:pickBottle', (data: { loserId: string; loserName: string; remainingBottles: number[] }) => {
+      bottlePickPrompt.value = data;
+    });
+    s.on('card:bottlePicked', (data: { loserId: string; loserName: string; bottleIndex: number }) => {
+      pendingBottlePick.value = data;
+    });
+    s.on('card:bottleResult', (punishment: BottlePunishment) => {
+      pendingBottlePick.value = null; bottlePickPrompt.value = null;
+      if (challengeResult.value?.type === 'card') {
+        challengeResult.value = { ...challengeResult.value, punishment };
+        showPunishment.value = true;
+      }
+    });
+    s.on('chat:message', (msg: ChatMsg) => {
+      chatMessages.value.push(msg);
+      if (chatMessages.value.length > 100) chatMessages.value.shift();
+    });
+    s.on('player:left', (pid: string) => {
+      const p = room.value?.players.find(p => p.id === pid);
+      addLog(`${p?.name ?? pid} 离开了`);
+    });
+  }
+
   // ── Socket 连接 & 事件 ────────────────────────────────────
-  function connect(name: string, avatar: string, mode: GameMode = 'dice', targetRoomId?: string) {
+  function connect(name: string, avatar: string, mode: GameMode = 'card', targetRoomId?: string) {
     myName.value  = name;
     myAvatar.value = avatar;
     gameMode.value = mode;
+    isSpectator.value = false;
 
     const s = connectSocket();
     socket.value  = s;
@@ -151,7 +221,27 @@ export const useGameStore = defineStore('game', () => {
     s.on('error',      (msg: string) => { errorMsg.value = msg; });
 
     s.on('room:update',       (r: RoomPublicView) => { room.value = r; });
-    s.on('game:stateUpdate',  (r: RoomPublicView) => { room.value = r; });
+    s.on('game:stateUpdate',  (r: RoomPublicView) => {
+      const prevDiceBid = room.value?.currentDiceBid;
+      const prevCardBid = room.value?.currentCardBid;
+      room.value = r;
+      // 骰子模式：他人喊话时记录到对局日志
+      if (r.currentDiceBid && r.currentDiceBid.playerId !== myId.value) {
+        const b = r.currentDiceBid;
+        if (!prevDiceBid || prevDiceBid.playerId !== b.playerId ||
+            prevDiceBid.quantity !== b.quantity || prevDiceBid.face !== b.face) {
+          addLog(`${b.playerName} 喊话：${b.quantity} 个 ${b.face} 点`);
+        }
+      }
+      // 牌模式：他人出牌时记录到对局日志
+      if (r.currentCardBid && r.currentCardBid.playerId !== myId.value) {
+        const b = r.currentCardBid;
+        if (!prevCardBid || prevCardBid.playerId !== b.playerId ||
+            prevCardBid.quantity !== b.quantity || prevCardBid.suit !== b.suit) {
+          addLog(`${b.playerName} 出牌：声称 ${b.quantity} 张 ${b.suit}`);
+        }
+      }
+    });
 
     s.on('card:pickBottle', (data: { loserId: string; loserName: string; remainingBottles: number[] }) => {
       bottlePickPrompt.value = data;
@@ -196,6 +286,12 @@ export const useGameStore = defineStore('game', () => {
       diceRolling.value = true;
       setTimeout(() => { diceRolling.value = false; }, 700);
       addLog(`第 ${data.room.round} 回合开始！`);
+      // 开局报名言
+      if (openingQuote.value) {
+        setTimeout(() => {
+          s.emit('chat:send', { text: openingQuote.value, type: 'chat' });
+        }, 800);
+      }
       // 录像：首回合启动
       if (data.room.round === 1) {
         replay.start(data.room.roomId, data.room.mode,
@@ -246,6 +342,12 @@ export const useGameStore = defineStore('game', () => {
     s.on('player:reconnected', (pid: string) => {
       addLog(`玩家 ${pid} 重新连线`);
     });
+    s.on('room:spectatorJoined', (spec: Spectator) => {
+      addLog(`${spec.name} 进入观战`);
+    });
+    s.on('room:spectatorLeft', (_sid: string) => {
+      addLog('一位观战者离开了');
+    });
 
     // ── 聊天事件 ────────────────────────────────────────────
     s.on('chat:message', (msg: ChatMsg) => {
@@ -282,6 +384,24 @@ export const useGameStore = defineStore('game', () => {
     socket.value?.emit('player:pickBottle', { bottleIndex });
   }
 
+  function kickPlayer(targetId: string) {
+    socket.value?.emit('room:kick', { targetId }, (res: any) => {
+      if (!res.success) errorMsg.value = res.error ?? '踢人失败';
+    });
+  }
+
+  function addAI() {
+    socket.value?.emit('room:addAI', (res: any) => {
+      if (!res.success) errorMsg.value = res.error ?? '添加AI失败';
+    });
+  }
+
+  function hostStart() {
+    socket.value?.emit('room:hostStart', (res: any) => {
+      if (!res.success) errorMsg.value = res.error ?? '开始失败';
+    });
+  }
+
   function sendChat(text: string, type: 'chat' | 'emoji' = 'chat') {
     if (!text.trim()) return;
     socket.value?.emit('chat:send', { text, type });
@@ -313,10 +433,12 @@ export const useGameStore = defineStore('game', () => {
     chatMessages.value = [];
     gameLog.value = [];
     winnerBanner.value = false;
+    isSpectator.value = false;
   }
 
   function clearError()      { errorMsg.value = ''; }
   function closePunishment() { showPunishment.value = false; }
+  function setOpeningQuote(quote: string) { openingQuote.value = quote; }
 
   return {
     myId, myName, myAvatar, myDice, myHand,
@@ -325,10 +447,12 @@ export const useGameStore = defineStore('game', () => {
     bottlePickPrompt, pendingBottlePick,
     chatMessages, gameLog, diceRolling, winnerBanner,
     phase, isMyTurn, me, currentPlayer,
-    connect, ready,
+    isSpectator,
+    connect, spectate, ready,
     diceBid, diceChallenge,
     cardPlay, cardChallenge, pickBottle,
     sendChat, reconnect, disconnect,
-    clearError, closePunishment,
+    clearError, closePunishment, setOpeningQuote,
+    kickPlayer, addAI, hostStart,
   };
 });

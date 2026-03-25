@@ -2,6 +2,14 @@
   <div class="min-h-screen flex flex-col safe-top" style="background:var(--ink-dark)">
     <WinnerOverlay :show="store.winnerBanner" :winner-name="store.room?.winner??''" :rounds="store.room?.round" @close="store.winnerBanner=false" />
 
+    <!-- 观战横幅 -->
+    <div v-if="store.isSpectator" class="flex items-center justify-center gap-2 px-4 py-1.5 text-xs tracking-widest" style="background:rgba(212,168,67,0.08);border-bottom:1px solid rgba(212,168,67,0.15);color:var(--gold)">
+      <span>👁 观战模式</span>
+      <span class="opacity-40">·</span>
+      <span class="opacity-60">你正在观战，可以发言但不能操作</span>
+      <span v-if="store.room?.spectators?.length" class="opacity-40">· {{ store.room.spectators.length }} 人观战中</span>
+    </div>
+
     <header class="flex items-center justify-between px-4 py-2.5 border-b" style="border-color:rgba(212,168,67,0.12)">
       <div class="flex items-center gap-2">
         <span class="candle-flicker text-lg">🕯️</span>
@@ -41,9 +49,10 @@
 
         <DiceCup v-if="store.gameMode==='dice'" :dice="store.myDice" :rolling="store.diceRolling" />
         <CardHand v-if="store.gameMode==='card'" :hand="store.myHand" :master-suit="store.room?.masterSuit??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" @play="onCardPlay" />
-        <CallPanel v-if="store.phase==='bidding'" :mode="store.gameMode" :is-my-turn="store.isMyTurn" :current-player-name="store.currentPlayer?.name??''" :current-bid="store.room?.currentDiceBid??store.room?.currentCardBid??null" :master-suit="store.room?.masterSuit??null" :my-dice="store.myDice" @dice-bid="onDiceBid" @challenge="onChallenge" />
+        <CallPanel v-if="store.phase==='bidding' && !store.isSpectator" :mode="store.gameMode" :is-my-turn="store.isMyTurn" :current-player-name="store.currentPlayer?.name??''" :current-bid="store.room?.currentDiceBid??store.room?.currentCardBid??null" :master-suit="store.room?.masterSuit??null" :my-dice="store.myDice" @dice-bid="onDiceBid" @challenge="onChallenge" />
+        <div v-if="store.phase==='bidding' && store.isSpectator" class="card-ink p-3 text-center text-xs opacity-40 tracking-widest">观战中 · 等待玩家操作…</div>
 
-        <div v-if="showBottlePicker" class="card-ink p-4 text-center">
+        <div v-if="showBottlePicker && !store.isSpectator" class="card-ink p-4 text-center">
           <p class="text-sm tracking-widest opacity-70 mb-3">从你面前 6 瓶里选一瓶喝下</p>
           <div class="flex flex-wrap justify-center gap-2">
             <button

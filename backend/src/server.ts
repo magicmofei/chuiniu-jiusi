@@ -44,6 +44,21 @@ app.get('/health', (_req, res) =>
   res.json({ status: 'ok', time: new Date().toISOString() })
 );
 
+// ── 房间信息（分享链接预览用）────────────────────────────
+app.get('/api/room/:roomId', (req, res) => {
+  const room = rm.getRoom(req.params.roomId.toUpperCase());
+  if (!room) { res.status(404).json({ error: '房间不存在' }); return; }
+  res.json({
+    roomId: room.roomId,
+    mode: room.mode,
+    playerCount: room.players.length,
+    maxPlayers: 4,
+    phase: room.phase,
+    full: room.players.length >= 4 && !room.players.some(p => p.isAI),
+    spectatorCount: room.spectators.length,
+  });
+});
+
 // ── AI 行动调度（延迟执行，给前端时间展示）────────────────
 function scheduleAIAction(roomId: string, delayMs = 1500): void {
   setTimeout(() => {
@@ -204,6 +219,24 @@ function scheduleAIPickBottle(roomId: string, playerId: string, delayMs = 1800):
 // ── Socket.io 主连接处理 ──────────────────────────────────
 io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>) => {
   console.log(`[连接] ${socket.id}`);
+
+  // ── 观战加入 ──────────────────────────────────────────────
+  socket.on('room:spectate', (data, cb) => {
+    const { name, avatar, roomId: targetRoomId } = data;
+    if (!name?.trim()) { cb({ success: false, error: '请输入昵称' }); return; }
+    if (!targetRoomId) { cb({ success: false, error: '需要房间码' }); return; }
+    const res = rm.joinAsSpectator(socket.id, name.trim(), avatar || '👁️', targetRoomId.toUpperCase());
+    if (!res.success || !res.roomId) { cb({ success: false, error: res.error }); return; }
+    socket.join(res.roomId);
+    cb({ success: true, roomId: res.roomId });
+    const room = rm.getRoom(res.roomId)!;
+    const spectator = rm.getSpectator(socket.id)!;
+    // 通知房间内其他人有观战者加入
+    socket.to(res.roomId).emit('room:spectatorJoined', spectator);
+    // 给观战者发当前房间状态
+    io.to(socket.id).emit('room:update', rm.toPublicView(room));
+    console.log(`[观战] ${name} 观战房间 ${res.roomId}`);
+  });
 
   // ── 加入/创建房间 ────────────────────────────────────────
   socket.on('room:join', (data, cb) => {
@@ -398,17 +431,68 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     }, 2200);
   });
 
+  // ── 房主：踢人 ──────────────────────────────────────────
+  socket.on('room:kick', (data, cb) => {
+    const res = rm.kickPlayer(socket.id, data.targetId);
+    if (!res.success || !res.roomId) { cb({ success: false, error: res.error }); return; }
+    // 通知被踢者
+    io.to(data.targetId).emit('error', '你已被房主移出房间');
+    cb({ success: true });
+    const room = rm.getRoom(res.roomId)!;
+    io.to(res.roomId).emit('room:update', rm.toPublicView(room));
+    console.log(`[踢人] ${socket.id} 踢出 ${data.targetId}`);
+  });
+
+  // ── 房主：加AI ───────────────────────────────────────────
+  socket.on('room:addAI', (cb) => {
+    const res = rm.addAI(socket.id);
+    if (!res.success || !res.roomId) { cb({ success: false, error: res.error }); return; }
+    cb({ success: true });
+    const room = rm.getRoom(res.roomId)!;
+    io.to(res.roomId).emit('room:update', rm.toPublicView(room));
+    console.log(`[加AI] 房主 ${socket.id} 添加了AI玩家`);
+  });
+
+  // ── 房主：强制开始 ────────────────────────────────────────
+  socket.on('room:hostStart', (cb) => {
+    const res = rm.hostStartGame(socket.id);
+    if (!res.success || !res.roomId || !res.room) { cb({ success: false, error: res.error }); return; }
+    cb({ success: true });
+
+    io.to(res.roomId).emit('room:update', rm.toPublicView(res.room));
+
+    const engine = rm.startGame(res.roomId);
+    if (!engine) return;
+    const roundData = engine.startRound();
+
+    res.room.players.forEach(p => {
+      const priv = roundData.playerPrivateData.get(p.id) ?? { dice: [], hand: [] };
+      io.to(p.id).emit('game:start', {
+        room: roundData.room,
+        yourDice: priv.dice as DiceFace[],
+        yourHand: priv.hand,
+      });
+    });
+    console.log(`[房主开局] 房间 ${res.roomId} 强制开始（${res.room.players.length}人）`);
+
+    const firstPlayer = engine.getCurrentPlayer();
+    if (firstPlayer?.isAI) scheduleAIAction(res.roomId, 1200);
+  });
+
   // ── 聊天 ─────────────────────────────────────────────────
   socket.on('chat:send', (data: { text: string; type: string }) => {
     const room = rm.getRoomBySocket(socket.id);
     if (!room) return;
+    // 支持玩家和观战者发言
     const player = room.players.find(p => p.id === socket.id);
-    if (!player) return;
+    const spectator = rm.getSpectator(socket.id);
+    const sender = player ?? spectator;
+    if (!sender) return;
     const msg = {
       id: `${Date.now()}-${socket.id}`,
       playerId: socket.id,
-      playerName: player.name,
-      avatar: player.avatar,
+      playerName: sender.name + (spectator ? '（观战）' : ''),
+      avatar: sender.avatar,
       text: (data.text ?? '').slice(0, 80),
       time: Date.now(),
       type: (data.type === 'emoji' ? 'emoji' : 'chat') as 'chat' | 'emoji' | 'system',
@@ -419,6 +503,16 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
   // ── 断线 ─────────────────────────────────────────────────
   socket.on('disconnect', (reason) => {
     console.log(`[断线] ${socket.id}，原因: ${reason}`);
+    // 如果是观战者断线，直接移除
+    if (rm.isSpectator(socket.id)) {
+      const { roomId: specRoomId } = rm.removeSpectator(socket.id);
+      if (specRoomId) {
+        socket.to(specRoomId).emit('room:spectatorLeft', socket.id);
+        const specRoom = rm.getRoom(specRoomId);
+        if (specRoom) io.to(specRoomId).emit('room:update', rm.toPublicView(specRoom));
+      }
+      return;
+    }
     const { roomId } = rm.markDisconnected(
       socket.id,
       (rid, _pid) => {

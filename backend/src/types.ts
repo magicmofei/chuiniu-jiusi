@@ -105,8 +105,10 @@ export type PunishmentResult = MengHanPunishment | RoulettePunishment | BottlePu
 // ── 房间 ─────────────────────────────────────────────────────
 export interface Room {
   roomId: string;              // 6位大写房间码
+  hostId: string;              // 房主 socket id
   mode: GameMode;
   players: Player[];
+  spectators: Spectator[];     // 观战者列表
   phase: GamePhase;
   round: number;
   currentPlayerIndex: number;
@@ -128,6 +130,13 @@ export interface Room {
   lastPunishment: PunishmentResult | null;
 }
 
+// ── 观战者 ───────────────────────────────────────────────────
+export interface Spectator {
+  id: string;       // socket.id
+  name: string;
+  avatar: string;
+}
+
 // ── 公开视图（隐藏私有数据）─────────────────────────────────
 export interface PlayerPublicView {
   id: string;
@@ -144,8 +153,10 @@ export interface PlayerPublicView {
 
 export interface RoomPublicView {
   roomId: string;
+  hostId: string;              // 房主 id（前端用于显示房主标记和控制按钮）
   mode: GameMode;
   players: PlayerPublicView[];
+  spectators: Spectator[];     // 观战者列表
   phase: GamePhase;
   round: number;
   currentPlayerIndex: number;
@@ -235,9 +246,27 @@ export interface ServerToClientEvents {
 
   // 错误
   'error': (msg: string) => void;
+
+  // 观战者加入/离开通知
+  'room:spectatorJoined': (s: Spectator) => void;
+  'room:spectatorLeft': (spectatorId: string) => void;
 }
 
 export interface ClientToServerEvents {
+  'room:spectate': (
+    data: { name: string; avatar: string; roomId: string },
+    cb: (res: { success: boolean; roomId?: string; error?: string; full?: boolean }) => void
+  ) => void;
+  'room:kick': (
+    data: { targetId: string },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  'room:addAI': (
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  'room:hostStart': (
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
   'room:join': (
     data: { name: string; avatar: string; mode?: GameMode; roomId?: string },
     cb: (res: { success: boolean; roomId?: string; playerId?: string; error?: string }) => void
