@@ -329,7 +329,17 @@ export const useGameStore = defineStore('game', () => {
     s.on('connect', () => {
       connected.value = true; myId.value = s.id ?? '';
       s.emit('room:join', { name, avatar, mode, roomId: targetRoomId, characterId }, (res: any) => {
-        if (res.success) { roomId.value = res.roomId; addLog(`已加入房间 ${res.roomId}`); }
+        if (res.success) {
+          roomId.value = res.roomId;
+          // 持久化 session，供刷新后重连
+          localStorage.setItem('chuiniu_session', JSON.stringify({
+            roomId: res.roomId,
+            playerId: s.id,
+            name,
+            avatar,
+          }));
+          addLog(`已加入房间 ${res.roomId}`);
+        }
         else { errorMsg.value = res.error ?? '加入失败'; }
       });
     });
@@ -367,11 +377,26 @@ export const useGameStore = defineStore('game', () => {
   function reconnect(targetRoomId: string, playerId: string) {
     const s = connectSocket(); socket.value = s;
     s.on('connect', () => {
-      connected.value = true;
+      connected.value = true; myId.value = s.id ?? '';
       s.emit('room:reconnect', { roomId: targetRoomId, playerId }, (res: any) => {
-        if (res.success) { roomId.value = targetRoomId; } else { errorMsg.value = res.error ?? '重连失败'; }
+        if (res.success) {
+          roomId.value = targetRoomId;
+          // 更新 session 中的新 socket id
+          const raw = localStorage.getItem('chuiniu_session');
+          if (raw) {
+            try {
+              const session = JSON.parse(raw);
+              session.playerId = s.id;
+              localStorage.setItem('chuiniu_session', JSON.stringify(session));
+            } catch { /* ignore */ }
+          }
+          addLog('重连成功，已恢复房间状态');
+        } else {
+          errorMsg.value = res.error ?? '重连失败';
+        }
       });
     });
+    _registerCommonEvents(s);
   }
   function disconnect() {
     disconnectSocket(); socket.value = null; connected.value = false;
@@ -382,6 +407,8 @@ export const useGameStore = defineStore('game', () => {
     chatMessages.value = []; gameLog.value = [];
     winnerBanner.value = false; isSpectator.value = false;
     openingQuotes.value = []; showingOpeningQuotes.value = false; selectedCharacter.value = null;
+    // 清除本地 session
+    localStorage.removeItem('chuiniu_session');
   }
 
   function nextOpeningQuote() {

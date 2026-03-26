@@ -98,7 +98,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/gameStore';
 import type { DiceFace, CardSuit } from '../stores/gameStore';
@@ -195,7 +195,32 @@ function onPickBottle(bottleIndex: number) { store.pickBottle(bottleIndex); }
 function backToLobby() { store.disconnect(); router.push('/'); }
 function downloadReplay() { replay.download(); }
 
-if (!store.roomId) router.push('/');
+// 刷新重连：若 store 中无 roomId，尝试从 localStorage 恢复 session
+onMounted(() => {
+  if (store.roomId) return; // 已有状态，无需恢复
+  const raw = localStorage.getItem('chuiniu_session');
+  if (!raw) { router.push('/'); return; }
+  let session: { roomId: string; playerId: string; name: string; avatar: string } | null = null;
+  try { session = JSON.parse(raw); } catch { localStorage.removeItem('chuiniu_session'); router.push('/'); return; }
+  if (!session?.roomId || !session?.playerId) { localStorage.removeItem('chuiniu_session'); router.push('/'); return; }
+  // 尝试重连
+  store.myName = session.name;
+  store.myAvatar = session.avatar;
+  store.reconnect(session.roomId, session.playerId);
+  // 等待重连结果：若成功 roomId 会被赋值，否则跳回首页
+  const timer = setTimeout(() => {
+    if (!store.roomId) {
+      localStorage.removeItem('chuiniu_session');
+      router.push('/');
+    }
+  }, 6000);
+  const unwatch = watch(() => store.roomId, (id) => {
+    if (id) { clearTimeout(timer); unwatch(); }
+  });
+  watch(() => store.errorMsg, (msg) => {
+    if (msg) { clearTimeout(timer); unwatch(); localStorage.removeItem('chuiniu_session'); router.push('/'); }
+  }, { once: true });
+});
 </script>
 
 <style scoped>
