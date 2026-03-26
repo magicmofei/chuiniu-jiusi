@@ -12,7 +12,7 @@
       <div class="flex items-center gap-2">
         <span class="candle-flicker text-lg">🕯️</span>
         <span class="text-sm font-bold tracking-[0.2em]" style="color:var(--gold)">吹牛酒肆</span>
-        <span class="text-xs px-2 py-0.5 rounded border ml-1 hidden sm:inline" style="border-color:rgba(212,168,67,0.2);color:var(--ink-light)">{{ store.gameMode==='dice'?'🎲 骰子':'🃏 酒令' }}</span>
+        <span class="text-xs px-2 py-0.5 rounded border ml-1 hidden sm:inline" style="border-color:rgba(212,168,67,0.2);color:var(--ink-light)">{{ store.gameMode==='dice'?'🎲 骰子':'🃏 酒令（骗子酒吧）' }}</span>
       </div>
       <div class="text-xs tracking-widest" style="color:var(--ink-light)">第{{ store.room?.round??0 }}回合 · <span style="color:var(--gold)">{{ store.roomId }}</span></div>
       <div class="flex items-center gap-2">
@@ -171,14 +171,14 @@ const currentBidDisplay = computed(() => {
   }
   if (store.gameMode === 'card' && store.room?.currentCardBid) {
     const b = store.room.currentCardBid;
-    return { playerName: b.playerName, label: `${b.quantity} 张 ${suitLabel(b.suit)}` };
+    return { playerName: b.playerName, label: `${b.quantity} 张 ${suitLabel(b.suit)}` }; // suitLabel已更新为扑克花色
   }
   return null;
 });
 
 function faceChar(f: number) { return ['⚀','⚁','⚂','⚃','⚄','⚅'][f - 1] ?? '?'; }
 function suitLabel(s: string) {
-  return ({ huadiao:'花雕', nverhong:'女儿红', zhuyeqing:'竹叶青', wild:'赖子' } as any)[s] ?? s;
+  return ({ spades:'♠黑桃', hearts:'♥红心', diamonds:'♦方块', clubs:'♣梅花', joker:'🃏小丑' } as any)[s] ?? s;
 }
 function isCurrentPlayer(id: string) {
   const idx = store.room?.currentPlayerIndex ?? -1;

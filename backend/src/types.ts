@@ -66,7 +66,7 @@ export const AI_CHARACTER_IDS = ['baozheng', 'jigong', 'qinhui', 'lishishi'];
 // ── 基础类型 ─────────────────────────────────────────────────
 export type DiceFace = 1 | 2 | 3 | 4 | 5 | 6;
 export type GameMode = 'dice' | 'card';
-export type CardSuit = 'huadiao' | 'nverhong' | 'zhuyeqing' | 'wild'; // 花雕/女儿红/竹叶青/赖子
+export type CardSuit = 'spades' | 'hearts' | 'diamonds' | 'clubs' | 'joker'; // ♠黑桃/♥红心/♦方块/♣梅花/🃏小丑
 
 export type GamePhase =
   | 'waiting'    // 等待玩家加入

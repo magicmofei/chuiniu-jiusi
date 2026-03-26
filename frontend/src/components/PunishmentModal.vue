@@ -150,7 +150,7 @@ const stageClass = computed(() => {
 
 function faceChar(f: number) { return ['⚀','⚁','⚂','⚃','⚄','⚅'][f-1] ?? '?'; }
 function suitLabel(s: string) {
-  return ({ huadiao:'花雕', nverhong:'女儿红', zhuyeqing:'竹叶青', wild:'赖子' } as Record<string,string>)[s] ?? s;
+  return ({ spades:'♠黑桃', hearts:'♥红心', diamonds:'♦方块', clubs:'♣梅花', joker:'🃏小丑' } as Record<string,string>)[s] ?? s;
 }
 
 const dicePunishment = computed(() => props.result.type === 'dice' ? props.result.punishment : null);

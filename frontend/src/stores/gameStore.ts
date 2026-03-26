@@ -10,7 +10,7 @@ import type { Socket } from 'socket.io-client';
 
 // ── 类型定义（镜像后端 types.ts）────────────────────────────
 export type DiceFace = 1 | 2 | 3 | 4 | 5 | 6;
-export type CardSuit = 'huadiao' | 'nverhong' | 'zhuyeqing' | 'wild';
+export type CardSuit = 'spades' | 'hearts' | 'diamonds' | 'clubs' | 'joker'; // ♠黑桃/♥红心/♦方块/♣梅花/🃏小丑
 export type GameMode = 'dice' | 'card';
 export type GamePhase = 'waiting'|'ready'|'rolling'|'bidding'|'challenge'|'punishment'|'result'|'gameOver';
 export type CharacterModel = 'A' | 'B' | 'C' | 'D';
@@ -211,8 +211,9 @@ export const useGameStore = defineStore('game', () => {
       }
       if (r.currentCardBid && r.currentCardBid.playerId !== myId.value) {
         const b = r.currentCardBid;
+        const suitName = ({ spades:'♠黑桃', hearts:'♥红心', diamonds:'♦方块', clubs:'♣梅花', joker:'🃏小丑' } as any)[b.suit] ?? b.suit;
         if (!prevCardBid || prevCardBid.playerId !== b.playerId || prevCardBid.quantity !== b.quantity || prevCardBid.suit !== b.suit)
-          addLog(`${b.playerName} 出牌：声称 ${b.quantity} 张 ${b.suit}`);
+          addLog(`${b.playerName} 出牌：声称 ${b.quantity} 张 ${suitName}`);
       }
     });
     s.on('card:pickBottle', (data: { loserId: string; loserName: string; remainingBottles: number[] }) => {
@@ -234,7 +235,7 @@ export const useGameStore = defineStore('game', () => {
           type: 'card',
           challengerId: '', challengerName: '',
           bidderId: '', bidderName: '',
-          bid: { playerId: '', playerName: '', quantity: 0, suit: 'huadiao' as any, actualCards: [] },
+          bid: { playerId: '', playerName: '', quantity: 0, suit: 'spades' as any, actualCards: [] },
           bidSuccess: false,
           loserIds: [punishment.loserId], loserNames: [punishment.loserName],
           loserId: punishment.loserId,
@@ -377,7 +378,8 @@ export const useGameStore = defineStore('game', () => {
   }
   function cardPlay(cards: CardSuit[], claimSuit: CardSuit, claimQuantity: number) {
     socket.value?.emit('player:cardPlay', { cards, claimSuit, claimQuantity });
-    addLog(`你出牌：声称 ${claimQuantity} 张 ${claimSuit}`); replay.push('cardPlay', { cards, claimSuit, claimQuantity });
+    const suitName = ({ spades:'♠黑桃', hearts:'♥红心', diamonds:'♦方块', clubs:'♣梅花', joker:'🃏小丑' } as any)[claimSuit] ?? claimSuit;
+    addLog(`你出牌：声称 ${claimQuantity} 张 ${suitName}`); replay.push('cardPlay', { cards, claimSuit, claimQuantity });
   }
   function cardChallenge() {
     socket.value?.emit('player:cardChallenge'); addLog('你发起质疑！'); replay.push('cardChallenge', {});

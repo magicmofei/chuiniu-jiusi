@@ -17,7 +17,7 @@
       </p>
       <!-- 牌局模式 -->
       <p v-else class="text-sm mt-2" style="color: var(--ink-light)">
-        喊话：{{ result.bid.quantity }} 张 {{ result.bid.suit }}
+        喊话：{{ result.bid.quantity }} 张 {{ cardSuitLabel(result.bid.suit) }}
       </p>
     </div>
 
@@ -38,7 +38,7 @@
     <!-- 牌局明细 -->
     <div v-else class="space-y-2">
       <p class="text-xs text-center" style="color: var(--ink-light)">
-        实际出牌：{{ result.bid.actualCards?.join(', ') ?? '—' }}
+        实际出牌：{{ result.bid.actualCards?.map(cardSuitLabel).join(' · ') ?? '—' }}
       </p>
     </div>
 
@@ -53,5 +53,8 @@ defineProps<{ result: ChallengeResult }>();
 
 function diceFaceChar(f: number): string {
   return ['⚀','⚁','⚂','⚃','⚄','⚅'][f - 1] ?? '?';
+}
+function cardSuitLabel(s: string): string {
+  return ({ spades:'♠黑桃', hearts:'♥红心', diamonds:'♦方块', clubs:'♣梅花', joker:'🃏小丑' } as Record<string,string>)[s] ?? s;
 }
 </script>

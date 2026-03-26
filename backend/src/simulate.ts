@@ -96,8 +96,8 @@ function simulateGame(mode: GameMode) {
             engine.placeBid(cur.id, { quantity: 1, face: 1 as DiceFace });
           } else {
             engine.placeBid(cur.id, {
-              cards: [cur.hand[0] ?? 'huadiao'],
-              claimSuit: currentRoom.masterSuit ?? 'huadiao',
+              cards: [cur.hand[0] ?? 'spades'],
+              claimSuit: currentRoom.masterSuit ?? 'spades',
               claimQuantity: 1,
             });
           }
