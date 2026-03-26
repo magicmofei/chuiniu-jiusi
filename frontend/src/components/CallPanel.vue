@@ -58,7 +58,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import type { DiceFace, CardSuit, GameMode } from '../stores/gameStore';
+import type { DiceFace, CardValue, GameMode } from '../stores/gameStore';
 import ChallengeButton from './ChallengeButton.vue';
 
 defineProps<{
@@ -66,7 +66,7 @@ defineProps<{
   isMyTurn: boolean;
   currentPlayerName: string;
   currentBid: unknown;
-  masterSuit: CardSuit | null;
+  targetCard: CardValue | null;
   myDice: DiceFace[];
 }>();
 

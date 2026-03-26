@@ -73,7 +73,7 @@
           <p class="result-label" :class="result.bidSuccess ? 'c-jade' : 'c-red'">
             {{ result.bidSuccess ? '叫牌成真！' : '吹牛败露！' }}
           </p>
-          <p class="hint-xs">实际出牌：{{ result.bid.actualCards?.map(suitLabel).join(' · ') ?? '—' }}</p>
+          <p class="hint-xs">实际出牌：{{ result.bid.actualCards?.join(' · ') ?? '—' }}（目标牌：{{ result.bid.targetCard }}）</p>
         </div>
 
         <div class="drink-stage" :class="stageClass">
@@ -149,9 +149,6 @@ const stageClass = computed(() => {
 });
 
 function faceChar(f: number) { return ['⚀','⚁','⚂','⚃','⚄','⚅'][f-1] ?? '?'; }
-function suitLabel(s: string) {
-  return ({ spades:'♠黑桃', hearts:'♥红心', diamonds:'♦方块', clubs:'♣梅花', joker:'🃏小丑' } as Record<string,string>)[s] ?? s;
-}
 
 const dicePunishment = computed(() => props.result.type === 'dice' ? props.result.punishment : null);
 const cardPunishment = computed(() => props.result.type === 'card' ? props.result.punishment : null);

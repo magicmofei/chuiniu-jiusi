@@ -10,7 +10,10 @@ import type { Socket } from 'socket.io-client';
 
 // ── 类型定义（镜像后端 types.ts）────────────────────────────
 export type DiceFace = 1 | 2 | 3 | 4 | 5 | 6;
-export type CardSuit = 'spades' | 'hearts' | 'diamonds' | 'clubs' | 'joker'; // ♠黑桃/♥红心/♦方块/♣梅花/🃏小丑
+/** 牌值：Q/K/A各6张 + Joker×2，共20张 */
+export type CardValue = 'Q' | 'K' | 'A' | 'Joker';
+/** @deprecated 保留兼容别名 */
+export type CardSuit = CardValue;
 export type GameMode = 'dice' | 'card';
 export type GamePhase = 'waiting'|'ready'|'rolling'|'bidding'|'challenge'|'punishment'|'result'|'gameOver';
 export type CharacterModel = 'A' | 'B' | 'C' | 'D';
@@ -86,7 +89,7 @@ export interface PlayerPublicView {
 }
 
 export interface DiceBid { playerId: string; playerName: string; quantity: number; face: DiceFace; }
-export interface CardBid { playerId: string; playerName: string; quantity: number; suit: CardSuit; }
+export interface CardBid { playerId: string; playerName: string; quantity: number; targetCard: CardValue; }
 
 export interface MengHanPunishment {
   type: 'menghan'; loserId: string; loserName: string;
@@ -110,7 +113,7 @@ export interface RoomPublicView {
   phase: GamePhase; round: number; currentPlayerIndex: number;
   currentDiceBid: DiceBid | null;
   currentCardBid: CardBid | null;
-  masterSuit: CardSuit | null;
+  targetCard: CardValue | null;  // 本局目标牌（Q/K/A）
   cardBidHistoryCount: number;
   winner: string | null;
   eliminatedPlayerIds: string[];
@@ -145,7 +148,7 @@ export const useGameStore = defineStore('game', () => {
   const myName      = ref('');
   const myAvatar    = ref('🍶');
   const myDice      = ref<DiceFace[]>([]);
-  const myHand      = ref<CardSuit[]>([]);
+  const myHand      = ref<CardValue[]>([]);
   const roomId      = ref('');
   const room        = ref<RoomPublicView | null>(null);
   const challengeResult = ref<ChallengeResult | null>(null);
@@ -174,7 +177,7 @@ export const useGameStore = defineStore('game', () => {
   const bottlePickPrompt  = ref<{ loserId: string; loserName: string; remainingBottles: number[] } | null>(null);
   const pendingBottlePick = ref<{ loserId: string; loserName: string; bottleIndex: number } | null>(null);
   // 缓存：若惩罚弹窗还在显示时收到 roundStart，先缓存，关弹窗后再应用
-  const pendingRoundStart = ref<{ room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardSuit[] } | null>(null);
+  const pendingRoundStart = ref<{ room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardValue[] } | null>(null);
 
   function addLog(msg: string) {
     gameLog.value.unshift(`[${new Date().toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}] ${msg}`);
@@ -211,9 +214,8 @@ export const useGameStore = defineStore('game', () => {
       }
       if (r.currentCardBid && r.currentCardBid.playerId !== myId.value) {
         const b = r.currentCardBid;
-        const suitName = ({ spades:'♠黑桃', hearts:'♥红心', diamonds:'♦方块', clubs:'♣梅花', joker:'🃏小丑' } as any)[b.suit] ?? b.suit;
-        if (!prevCardBid || prevCardBid.playerId !== b.playerId || prevCardBid.quantity !== b.quantity || prevCardBid.suit !== b.suit)
-          addLog(`${b.playerName} 出牌：声称 ${b.quantity} 张 ${suitName}`);
+        if (!prevCardBid || prevCardBid.playerId !== b.playerId || prevCardBid.quantity !== b.quantity)
+          addLog(`${b.playerName} 出牌：声称 ${b.quantity} 张目标牌`);
       }
     });
     s.on('card:pickBottle', (data: { loserId: string; loserName: string; remainingBottles: number[] }) => {
@@ -273,7 +275,7 @@ export const useGameStore = defineStore('game', () => {
       currentQuoteIndex.value = 0;
       showingOpeningQuotes.value = true;
     });
-    s.on('game:roundStart', (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardSuit[] }) => {
+    s.on('game:roundStart', (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardValue[] }) => {
       // 若惩罚弹窗还在显示，先缓存，等弹窗关闭后再应用
       if (showPunishment.value) {
         pendingRoundStart.value = data;
@@ -354,7 +356,7 @@ export const useGameStore = defineStore('game', () => {
     if (!s.connected) s.connect();
   }
 
-  function _applyRoundStart(data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardSuit[] }) {
+  function _applyRoundStart(data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardValue[] }) {
     room.value = data.room;
     myDice.value = data.yourDice;
     myHand.value = data.yourHand;
@@ -376,10 +378,10 @@ export const useGameStore = defineStore('game', () => {
   function diceChallenge() {
     socket.value?.emit('player:diceChallenge'); addLog('你发起质疑！'); replay.push('diceChallenge', {});
   }
-  function cardPlay(cards: CardSuit[], claimSuit: CardSuit, claimQuantity: number) {
-    socket.value?.emit('player:cardPlay', { cards, claimSuit, claimQuantity });
-    const suitName = ({ spades:'♠黑桃', hearts:'♥红心', diamonds:'♦方块', clubs:'♣梅花', joker:'🃏小丑' } as any)[claimSuit] ?? claimSuit;
-    addLog(`你出牌：声称 ${claimQuantity} 张 ${suitName}`); replay.push('cardPlay', { cards, claimSuit, claimQuantity });
+  function cardPlay(cards: CardValue[], claimQuantity: number) {
+    socket.value?.emit('player:cardPlay', { cards, claimQuantity });
+    addLog(`你出牌：声称 ${claimQuantity} 张目标牌（实出 ${cards.join('/')}）`);
+    replay.push('cardPlay', { cards, claimQuantity });
   }
   function cardChallenge() {
     socket.value?.emit('player:cardChallenge'); addLog('你发起质疑！'); replay.push('cardChallenge', {});

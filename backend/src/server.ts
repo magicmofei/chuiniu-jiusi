@@ -448,7 +448,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
 
     const updatedView = rm.toPublicView(room);
     io.to(room.roomId).emit('game:stateUpdate', updatedView);
-    console.log(`[出牌] ${socket.id}: ${data.claimQuantity}张${data.claimSuit}`);
+    console.log(`[出牌] ${socket.id}: ${data.claimQuantity}张目标牌`);
 
     const next = engine.getCurrentPlayer();
     if (next?.isAI) scheduleAIAction(room.roomId);

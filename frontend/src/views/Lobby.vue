@@ -11,15 +11,13 @@
     </div>
     <transition name="fade" mode="out-in">
       <div v-if="!store.roomId" key="form" class="card-ink p-7 w-full max-w-sm">
-        <button class="w-full mb-4 p-3 rounded-xl border flex items-center gap-3 transition-all"
-          :class="store.selectedCharacter ? 'border-yellow-600/40 bg-yellow-900/15' : 'border-white/10 hover:border-yellow-700/40'"
+        <button class="w-full mb-4 p-3 rounded-xl border border-yellow-600/40 bg-yellow-900/15 hover:border-yellow-500/60 flex items-center gap-3 transition-all"
           @click="showCharPanel = true"
         >
           <span class="text-2xl">{{ charEmoji }}</span>
           <div class="flex-1 text-left min-w-0">
-            <p v-if="store.selectedCharacter" class="text-sm font-semibold truncate" style="color:var(--gold)">{{ store.selectedCharacter.name }}</p>
-            <p v-else class="text-sm opacity-40">点击选择历史人物角色</p>
-            <p v-if="store.selectedCharacter" class="text-xs opacity-40 truncate mt-0.5">「{{ store.selectedCharacter.quote.slice(0,22) }}…」</p>
+            <p class="text-sm font-semibold truncate" style="color:var(--gold)">{{ store.selectedCharacter?.name }}</p>
+            <p class="text-xs opacity-40 truncate mt-0.5">「{{ store.selectedCharacter?.quote.slice(0,22) }}…」</p>
           </div>
           <span class="text-xs opacity-30">换角色 →</span>
         </button>
@@ -147,9 +145,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { useGameStore, type GameMode, type HistoricalCharacter, type CharacterModel } from '../stores/gameStore';
+import { useGameStore, type GameMode, type HistoricalCharacter, type CharacterModel, CHARACTERS } from '../stores/gameStore';
 import CharacterSelectPanel from '../components/CharacterSelectPanel.vue';
 
 const router = useRouter();
@@ -161,6 +159,17 @@ const targetRoom   = ref('');
 const joining      = ref(false);
 const copied       = ref(false);
 const showCharPanel = ref(false);
+
+// 若尚未选角色，自动随机分配一个
+onMounted(() => {
+  if (!store.selectedCharacter) {
+    const random = CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
+    store.selectCharacter(random);
+    name.value = random.name;
+  } else {
+    name.value = store.selectedCharacter.name;
+  }
+});
 
 // ── 房间列表 ────────────────────────────────────────────────
 const showRoomList   = ref(false);

@@ -7,7 +7,7 @@
 import { RoomManager } from './rooms';
 import { DiceGame } from './gameEngine/DiceGame';
 import { CardGame } from './gameEngine/CardGame';
-import { DiceFace, CardSuit, GameMode } from './types';
+import { DiceFace, CardValue, GameMode } from './types';
 
 const SEPARATOR = '─'.repeat(60);
 
@@ -66,8 +66,8 @@ function simulateGame(mode: GameMode) {
         log(`  ${p.name}(${p.diceCount}骰/${p.lives}命): [${priv?.dice.join(',')}]`);
       });
     } else {
-      const master = room.masterSuit;
-      log(`  本轮主牌: ${master}`);
+      const target = (room as any).targetCard;
+      log(`  本轮目标牌: ${target}`);
       room.players.forEach(p => {
         const priv = roundData.playerPrivateData.get(p.id);
         log(`  ${p.name}(${p.lives}命): 手牌=[${priv?.hand.join(',')}]`);
@@ -96,8 +96,7 @@ function simulateGame(mode: GameMode) {
             engine.placeBid(cur.id, { quantity: 1, face: 1 as DiceFace });
           } else {
             engine.placeBid(cur.id, {
-              cards: [cur.hand[0] ?? 'spades'],
-              claimSuit: currentRoom.masterSuit ?? 'spades',
+              cards: [cur.hand[0] ?? 'Q'],
               claimQuantity: 1,
             });
           }
@@ -113,7 +112,7 @@ function simulateGame(mode: GameMode) {
           log(`  🍶 惩罚: 减${p.livesLost}命 · 剩余 ${p.livesRemaining} 命 · ${p.eliminated ? '已淘汰！' : '继续战斗'}`);
         } else {
           const r = result;
-          log(`  实际打出: [${r.bid.actualCards.join(',')}]，声称 ${r.bid.quantity} 张 ${r.bid.suit}`);
+          log(`  实际打出: [${r.bid.actualCards.join(',')}]，声称 ${r.bid.quantity} 张目标牌(${r.bid.targetCard})`);
           log(`  ${r.bidSuccess ? '✓ 叫牌成真' : '✗ 吹牛败露'} → ${r.loserNames[0]} 需要选酒`);
 
           const cardEngine = engine as CardGame;
@@ -146,7 +145,7 @@ function simulateGame(mode: GameMode) {
           if (mode === 'dice') {
             log(`  ${cur.name} 喊: ${data.quantity} 个 ${data.face} 点`);
           } else {
-            log(`  ${cur.name} 出牌: ${data.cards?.join(',')} → 声称 ${data.claimQuantity} 张 ${data.claimSuit}`);
+            log(`  ${cur.name} 出牌: ${data.cards?.join(',')} → 声称 ${data.claimQuantity} 张目标牌`);
           }
           bidCount++;
         }

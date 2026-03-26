@@ -57,8 +57,8 @@
         </div>
 
         <DiceCup v-if="store.gameMode==='dice'" :dice="store.myDice" :rolling="store.diceRolling" />
-        <CardHand v-if="store.gameMode==='card'" :hand="store.myHand" :master-suit="store.room?.masterSuit??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" @play="onCardPlay" />
-        <CallPanel v-if="store.phase==='bidding' && !store.isSpectator" :mode="store.gameMode" :is-my-turn="store.isMyTurn" :current-player-name="store.currentPlayer?.name??''" :current-bid="store.room?.currentDiceBid??store.room?.currentCardBid??null" :master-suit="store.room?.masterSuit??null" :my-dice="store.myDice" @dice-bid="onDiceBid" @challenge="onChallenge" />
+        <CardHand v-if="store.gameMode==='card'" :hand="store.myHand" :target-card="store.room?.targetCard??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" @play="onCardPlay" />
+        <CallPanel v-if="store.phase==='bidding' && !store.isSpectator" :mode="store.gameMode" :is-my-turn="store.isMyTurn" :current-player-name="store.currentPlayer?.name??''" :current-bid="store.room?.currentDiceBid??store.room?.currentCardBid??null" :target-card="store.room?.targetCard??null" :my-dice="store.myDice" @dice-bid="onDiceBid" @challenge="onChallenge" />
         <div v-if="store.phase==='bidding' && store.isSpectator" class="card-ink p-3 text-center text-xs opacity-40 tracking-widest">观战中 · 等待玩家操作…</div>
 
         <div v-if="showMyBottlePicker" class="card-ink p-5 text-center">
@@ -102,7 +102,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/gameStore';
-import type { DiceFace, CardSuit } from '../stores/gameStore';
+import type { DiceFace, CardValue } from '../stores/gameStore';
 import GameSeat from '../components/GameSeat.vue';
 import DiceCup from '../components/DiceCup.vue';
 import CardHand from '../components/CardHand.vue';
@@ -171,15 +171,12 @@ const currentBidDisplay = computed(() => {
   }
   if (store.gameMode === 'card' && store.room?.currentCardBid) {
     const b = store.room.currentCardBid;
-    return { playerName: b.playerName, label: `${b.quantity} 张 ${suitLabel(b.suit)}` }; // suitLabel已更新为扑克花色
+    return { playerName: b.playerName, label: `${b.quantity} 张目标牌（${b.targetCard}）` };
   }
   return null;
 });
 
 function faceChar(f: number) { return ['⚀','⚁','⚂','⚃','⚄','⚅'][f - 1] ?? '?'; }
-function suitLabel(s: string) {
-  return ({ spades:'♠黑桃', hearts:'♥红心', diamonds:'♦方块', clubs:'♣梅花', joker:'🃏小丑' } as any)[s] ?? s;
-}
 function isCurrentPlayer(id: string) {
   const idx = store.room?.currentPlayerIndex ?? -1;
   return store.room?.players[idx]?.id === id;
@@ -189,8 +186,8 @@ function onChallenge() {
   if (soundEnabled.value) { sound.challengePress(); inkSplash(); }
   store.gameMode === 'dice' ? store.diceChallenge() : store.cardChallenge();
 }
-function onCardPlay(cards: CardSuit[], claimSuit: CardSuit, claimQty: number) {
-  store.cardPlay(cards, claimSuit, claimQty);
+function onCardPlay(cards: CardValue[], claimQty: number) {
+  store.cardPlay(cards, claimQty);
 }
 function onPickBottle(bottleIndex: number) { store.pickBottle(bottleIndex); }
 function backToLobby() { store.disconnect(); router.push('/'); }

@@ -3,7 +3,7 @@
 // 负责：房间创建/加入/离开、6位房间码、断线重连、AI补位
 // ============================================================
 
-import { Room, Player, Spectator, GameMode, CardSuit, RoomPublicView, BottleState, CharacterModel, CHARACTERS, AI_CHARACTER_IDS, findCharacter } from './types';
+import { Room, Player, Spectator, GameMode, CardValue, RoomPublicView, BottleState, CharacterModel, CHARACTERS, AI_CHARACTER_IDS, findCharacter } from './types';
 import { DiceGame } from './gameEngine/DiceGame';
 import { CardGame } from './gameEngine/CardGame';
 import { GameEngine } from './gameEngine/base/GameEngine';
@@ -49,7 +49,7 @@ function createAIPlayer(index: number): Player {
     lives: INITIAL_LIVES,
     diceCount: INITIAL_DICE,
     dice: [],
-    hand: [] as CardSuit[],
+    hand: [] as CardValue[],
     bottles: createBottleState(),
     disconnectedAt: null,
     characterId: charId,
@@ -72,7 +72,7 @@ function createPlayer(socketId: string, name: string, avatar: string, characterI
     lives: INITIAL_LIVES,
     diceCount: INITIAL_DICE,
     dice: [],
-    hand: [] as CardSuit[],
+    hand: [] as CardValue[],
     bottles: createBottleState(),
     disconnectedAt: null,
     characterId: resolvedChar.id,
@@ -447,7 +447,7 @@ export class RoomManager {
       currentCardBid: room.currentCardBid
         ? (({ actualCards: _a, ...rest }) => rest)(room.currentCardBid)
         : null,
-      masterSuit: room.masterSuit,
+      targetCard: room.targetCard ?? null,
       cardBidHistoryCount: room.cardBidHistory.length,
       winner: room.winner,
       eliminatedPlayerIds: room.eliminatedPlayerIds,
@@ -478,7 +478,7 @@ export class RoomManager {
       currentPlayerIndex: 0,
       currentDiceBid: null,
       currentCardBid: null,
-      masterSuit: null,
+      targetCard: null,
       cardBidHistory: [],
       winner: null,
       eliminatedPlayerIds: [],

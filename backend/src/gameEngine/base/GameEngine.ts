@@ -3,18 +3,18 @@
 // 定义状态机接口，DiceGame 和 CardGame 均继承此类
 // ============================================================
 
-import { Room, RoomPublicView, Player, PlayerPublicView, GamePhase, CardSuit } from '../../types';
+import { Room, RoomPublicView, Player, PlayerPublicView, GamePhase, CardValue } from '../../types';
 
 export interface RoundStartData {
   room: RoomPublicView;
   // 每位玩家各自的私有数据
-  playerPrivateData: Map<string, { dice: number[]; hand: CardSuit[] }>;
+  playerPrivateData: Map<string, { dice: number[]; hand: CardValue[] }>;
 }
 
 export interface ChallengeData {
   result: import('../../types').ChallengeResult;
   // 每位玩家各自看到的骰子/手牌
-  playerPrivateData: Map<string, { dice: number[]; hand: CardSuit[] }>;
+  playerPrivateData: Map<string, { dice: number[]; hand: CardValue[] }>;
 }
 
 /**
@@ -47,7 +47,7 @@ export abstract class GameEngine {
       hostId: this.room.hostId,
       mode: this.room.mode,
       spectators: this.room.spectators,
-      players: this.room.players.map(this.playerToPublic),
+      players: this.room.players.map(p => this.playerToPublic(p)),
       phase: this.room.phase,
       round: this.room.round,
       currentPlayerIndex: this.room.currentPlayerIndex,
@@ -55,7 +55,7 @@ export abstract class GameEngine {
       currentCardBid: this.room.currentCardBid
         ? (({ actualCards: _a, ...rest }) => rest)(this.room.currentCardBid)
         : null,
-      masterSuit: this.room.masterSuit,
+      targetCard: this.room.targetCard ?? null,
       cardBidHistoryCount: this.room.cardBidHistory.length,
       winner: this.room.winner,
       eliminatedPlayerIds: this.room.eliminatedPlayerIds,
@@ -100,7 +100,6 @@ export abstract class GameEngine {
 
   /** 用 crypto 安全随机整数 [min, max] */
   protected secureRandInt(min: number, max: number): number {
-    // Node.js 环境下用 crypto.randomInt（Node 14.10+），fallback Math.random
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const crypto = require('crypto') as typeof import('crypto');

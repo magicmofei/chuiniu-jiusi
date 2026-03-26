@@ -7,7 +7,7 @@
 import { GameEngine, RoundStartData, ChallengeData } from './base/GameEngine';
 import {
   Room, DiceFace, DiceBid, DiceChallengeResult,
-  MengHanPunishment, CardSuit
+  MengHanPunishment, CardValue
 } from '../types';
 
 export class DiceGame extends GameEngine {
@@ -40,7 +40,7 @@ export class DiceGame extends GameEngine {
     // 短暂 rolling 后切 bidding（前端动画完后再切，此处直接切）
     this.room.phase = 'bidding';
 
-    const privateData = new Map<string, { dice: number[]; hand: CardSuit[] }>();
+    const privateData = new Map<string, { dice: number[]; hand: CardValue[] }>();
     this.room.players.forEach(p => {
       privateData.set(p.id, { dice: [...p.dice], hand: [] });
     });
@@ -140,7 +140,7 @@ export class DiceGame extends GameEngine {
       room: this.toPublicView(),
     };
 
-    const privateData = new Map<string, { dice: number[]; hand: CardSuit[] }>();
+    const privateData = new Map<string, { dice: number[]; hand: CardValue[] }>();
     this.room.players.forEach(p => privateData.set(p.id, { dice: [], hand: [] }));
 
     return { result, playerPrivateData: privateData };

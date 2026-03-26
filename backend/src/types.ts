@@ -66,7 +66,10 @@ export const AI_CHARACTER_IDS = ['baozheng', 'jigong', 'qinhui', 'lishishi'];
 // ── 基础类型 ─────────────────────────────────────────────────
 export type DiceFace = 1 | 2 | 3 | 4 | 5 | 6;
 export type GameMode = 'dice' | 'card';
-export type CardSuit = 'spades' | 'hearts' | 'diamonds' | 'clubs' | 'joker'; // ♠黑桃/♥红心/♦方块/♣梅花/🃏小丑
+/** 牌模式牌值：Q/K/A各6张 + Joker×2，共20张 */
+export type CardValue = 'Q' | 'K' | 'A' | 'Joker';
+/** @deprecated 保留旧别名兼容，实际已改为 CardValue */
+export type CardSuit = CardValue;
 
 export type GamePhase =
   | 'waiting'    // 等待玩家加入
@@ -140,7 +143,7 @@ export interface Player {
   diceCount: number;     // 剩余骰子数
   dice: DiceFace[];      // 当前骰子（服务端保存，不推送给他人）
   // 牌模式
-  hand: CardSuit[];      // 手牌
+  hand: CardValue[];     // 手牌
   bottles: BottleState | null; // 扑克模式：个人6瓶酒状态
   // 断线重连
   disconnectedAt: number | null;  // 断线时间戳
@@ -158,9 +161,9 @@ export interface DiceBid {
 export interface CardBid {
   playerId: string;
   playerName: string;
-  quantity: number;
-  suit: CardSuit;
-  actualCards: CardSuit[];
+  quantity: number;         // 声称出了多少张目标牌（1-3）
+  targetCard: CardValue;   // 本局目标牌（Q/K/A），由系统随机指定
+  actualCards: CardValue[]; // 实际打出的牌（服务端保留，不推给他人）
 }
 
 export type PunishmentResult = MengHanPunishment | RoulettePunishment | BottlePunishment;
@@ -187,7 +190,7 @@ export interface Room {
   currentPlayerIndex: number;
   currentDiceBid: DiceBid | null;
   currentCardBid: CardBid | null;
-  masterSuit: CardSuit | null;
+  targetCard: CardValue | null;  // 本局目标牌，每轮随机（Q/K/A）
   cardBidHistory: CardBid[];
   winner: string | null;
   eliminatedPlayerIds: string[];
@@ -230,7 +233,7 @@ export interface RoomPublicView {
   currentPlayerIndex: number;
   currentDiceBid: DiceBid | null;
   currentCardBid: Omit<CardBid, 'actualCards'> | null;
-  masterSuit: CardSuit | null;
+  targetCard: CardValue | null;  // 本局目标牌（公开）
   cardBidHistoryCount: number;
   winner: string | null;
   eliminatedPlayerIds: string[];
@@ -280,9 +283,9 @@ export interface ServerToClientEvents {
   'player:joined': (p: PlayerPublicView) => void;
   'player:left': (playerId: string) => void;
   'player:reconnected': (playerId: string) => void;
-  'game:start': (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardSuit[] }) => void;
+  'game:start': (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardValue[] }) => void;
   'game:stateUpdate': (room: RoomPublicView) => void;
-  'game:roundStart': (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardSuit[] }) => void;
+  'game:roundStart': (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardValue[] }) => void;
   'game:over': (data: { winner: string; room: RoomPublicView }) => void;
   // v2.0 开场名言序列（游戏开始时推送，前端依次播放）
   'game:openingQuotes': (quotes: OpeningQuoteItem[]) => void;
@@ -326,7 +329,7 @@ export interface ClientToServerEvents {
   ) => void;
   'player:diceBid': (bid: { quantity: number; face: DiceFace }) => void;
   'player:diceChallenge': () => void;
-  'player:cardPlay': (data: { cards: CardSuit[]; claimSuit: CardSuit; claimQuantity: number }) => void;
+  'player:cardPlay': (data: { cards: CardValue[]; claimQuantity: number }) => void;
   'player:cardChallenge': () => void;
   'player:pickBottle': (data: { bottleIndex: number }) => void;
   'chat:send': (data: { text: string; type: string }) => void;

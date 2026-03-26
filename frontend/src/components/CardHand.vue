@@ -2,8 +2,8 @@
   <div class="card-ink p-4">
     <div class="flex items-center justify-between mb-3">
       <p class="text-xs tracking-widest opacity-40">我的手牌（{{ hand.length }}张）</p>
-      <span v-if="masterSuit" class="text-xs px-2 py-0.5 rounded border" style="border-color:rgba(212,168,67,0.3);color:var(--gold)">
-        主牌：{{ suitSymbol(masterSuit) }} {{ suitLabel(masterSuit) }}
+      <span v-if="targetCard" class="text-xs px-2 py-0.5 rounded border" style="border-color:rgba(212,168,67,0.3);color:var(--gold)">
+        本局目标牌：<strong>{{ targetCard }}</strong>
       </span>
     </div>
 
@@ -16,100 +16,91 @@
         :class="[
           selected.has(i) ? 'poker-card--selected' : '',
           disabled ? 'poker-card--disabled' : '',
-          isRed(card) ? 'poker-card--red' : 'poker-card--black',
-          card === 'joker' ? 'poker-card--joker' : '',
+          card === 'Joker' ? 'poker-card--joker' : cardColor(card),
         ]"
       >
-        <span class="poker-card__corner poker-card__corner--top">
-          {{ suitSymbol(card) }}
-        </span>
-        <span class="poker-card__center">
-          {{ card === 'joker' ? '🃏' : suitSymbol(card) }}
-        </span>
-        <span class="poker-card__corner poker-card__corner--bottom">
-          {{ suitSymbol(card) }}
-        </span>
+        <span class="poker-card__corner poker-card__corner--top">{{ cardCorner(card) }}</span>
+        <span class="poker-card__center">{{ cardCenter(card) }}</span>
+        <span class="poker-card__corner poker-card__corner--bottom">{{ cardCorner(card) }}</span>
       </button>
 
       <div v-if="!hand.length" class="text-sm opacity-20 tracking-wider">🃏 暂无手牌</div>
     </div>
 
-    <!-- 出牌控制 -->
+    <!-- 出牌控制：选中后声称张数 -->
     <div v-if="selected.size > 0 && !disabled" class="mt-4 flex items-center gap-3 flex-wrap slide-down">
       <div class="flex items-center gap-1">
         <span class="text-xs opacity-60 mr-1">声称张数：</span>
-        <button @click="claimQty = Math.max(1, claimQty-1)" class="w-7 h-7 rounded border text-sm" style="border-color:rgba(212,168,67,0.3);color:var(--gold)">−</button>
+        <button @click="claimQty = Math.max(1, claimQty - 1)" class="w-7 h-7 rounded border text-sm" style="border-color:rgba(212,168,67,0.3);color:var(--gold)">−</button>
         <span class="w-6 text-center font-bold" style="color:var(--parchment)">{{ claimQty }}</span>
-        <button @click="claimQty = Math.min(5, claimQty+1)" class="w-7 h-7 rounded border text-sm" style="border-color:rgba(212,168,67,0.3);color:var(--gold)">+</button>
+        <button @click="claimQty = Math.min(3, claimQty + 1)" class="w-7 h-7 rounded border text-sm" style="border-color:rgba(212,168,67,0.3);color:var(--gold)">+</button>
       </div>
-      <div class="flex items-center gap-1">
-        <span class="text-xs opacity-60 mr-1">声称花色：</span>
-        <button
-          v-for="s in SUITS" :key="s"
-          @click="claimSuit = s"
-          class="w-8 h-8 rounded border text-lg transition-all"
-          :class="claimSuit === s ? 'border-yellow-400 bg-yellow-900/30 scale-110' : 'border-white/15 hover:border-white/30'"
-          :style="{ color: isRed(s) ? '#e74c3c' : '#f0ece0' }"
-        >{{ suitSymbol(s) }}</button>
-      </div>
+      <span class="text-xs opacity-40">（声称全是&nbsp;<strong style="color:var(--gold)">{{ targetCard ?? '目标牌' }}</strong>）</span>
       <button @click="playCards" class="btn-gold text-xs px-4 py-1.5">出牌！</button>
-      <button @click="selected.clear()" class="text-xs opacity-40 hover:opacity-70">取消</button>
+      <button @click="selected.clear(); claimQty = 1" class="text-xs opacity-40 hover:opacity-70">取消</button>
     </div>
+
+    <!-- 已选提示 -->
+    <p v-if="selected.size > 0 && !disabled" class="text-xs opacity-30 mt-2">
+      已选 {{ selected.size }} 张，声称 {{ claimQty }} 张（可多选少报或少选多报来吹牛）
+    </p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue';
-import type { CardSuit } from '../stores/gameStore';
-
-const SUITS: CardSuit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
+import type { CardValue } from '../stores/gameStore';
 
 const props = defineProps<{
-  hand: CardSuit[];
-  masterSuit: CardSuit | null;
+  hand: CardValue[];
+  targetCard: CardValue | null;
   disabled: boolean;
 }>();
 
 const emit = defineEmits<{
-  play: [cards: CardSuit[], claimSuit: CardSuit, claimQty: number]
+  play: [cards: CardValue[], claimQty: number]
 }>();
 
 const selected = reactive(new Set<number>());
 const claimQty = ref(1);
-const claimSuit = ref<CardSuit>(props.masterSuit ?? 'spades');
 
 function toggleSelect(i: number) {
   if (props.disabled) return;
-  if (selected.has(i)) { selected.delete(i); }
-  else if (selected.size < 5) { selected.add(i); }
+  if (selected.has(i)) {
+    selected.delete(i);
+  } else if (selected.size < 3) {
+    // 最多选 3 张
+    selected.add(i);
+    // 默认声称张数跟随选牌数
+    claimQty.value = selected.size;
+  }
 }
 
 function playCards() {
   if (selected.size === 0) return;
   const cards = [...selected].map(i => props.hand[i]);
-  emit('play', cards, claimSuit.value, claimQty.value);
+  emit('play', cards, claimQty.value);
   selected.clear();
   claimQty.value = 1;
 }
 
-const suitSymbolMap: Record<CardSuit, string> = {
-  spades:   '♠',
-  hearts:   '♥',
-  diamonds: '♦',
-  clubs:    '♣',
-  joker:    '★',
-};
-const suitLabelMap: Record<CardSuit, string> = {
-  spades:   '黑桃',
-  hearts:   '红心',
-  diamonds: '方块',
-  clubs:    '梅花',
-  joker:    '小丑',
-};
+function cardColor(card: CardValue) {
+  if (card === 'A') return 'poker-card--ace';
+  if (card === 'K') return 'poker-card--king';
+  return 'poker-card--queen';
+}
 
-function suitSymbol(s: CardSuit) { return suitSymbolMap[s] ?? s; }
-function suitLabel(s: CardSuit)  { return suitLabelMap[s] ?? s; }
-function isRed(s: CardSuit)      { return s === 'hearts' || s === 'diamonds'; }
+function cardCorner(card: CardValue) {
+  if (card === 'Joker') return '★';
+  return card;
+}
+
+function cardCenter(card: CardValue) {
+  if (card === 'Joker') return '🃏';
+  if (card === 'A') return 'A';
+  if (card === 'K') return 'K';
+  return 'Q';
+}
 </script>
 
 <style scoped>
@@ -141,25 +132,38 @@ function isRed(s: CardSuit)      { return s === 'hearts' || s === 'diamonds'; }
   opacity: 0.45;
   cursor: not-allowed;
 }
-.poker-card--red .poker-card__corner,
-.poker-card--red .poker-card__center {
-  color: #c0392b;
+/* A 牌：深红 */
+.poker-card--ace .poker-card__corner,
+.poker-card--ace .poker-card__center {
+  color: #8b1a1a;
+  font-size: 1.4rem;
+  font-weight: 800;
 }
-.poker-card--black .poker-card__corner,
-.poker-card--black .poker-card__center {
-  color: #1a1a2e;
+/* K 牌：深蓝 */
+.poker-card--king .poker-card__corner,
+.poker-card--king .poker-card__center {
+  color: #1a3a6b;
+  font-size: 1.3rem;
+  font-weight: 800;
 }
+/* Q 牌：深紫 */
+.poker-card--queen .poker-card__corner,
+.poker-card--queen .poker-card__center {
+  color: #4a1060;
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+/* Joker */
 .poker-card--joker {
   background: linear-gradient(145deg, #1a0a2e, #2d1054);
   border-color: rgba(212,168,67,0.5);
 }
-.poker-card--joker .poker-card__center {
-  color: #d4a843;
-  font-size: 1.8rem;
-}
+.poker-card--joker .poker-card__center { font-size: 1.8rem; }
+.poker-card--joker .poker-card__corner { color: #d4a843; font-size: 0.9rem; }
+
 .poker-card__corner {
   position: absolute;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-weight: 700;
   line-height: 1;
 }
@@ -168,5 +172,6 @@ function isRed(s: CardSuit)      { return s === 'hearts' || s === 'diamonds'; }
 .poker-card__center {
   font-size: 1.6rem;
   line-height: 1;
+  font-weight: 900;
 }
 </style>

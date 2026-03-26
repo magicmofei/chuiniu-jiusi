@@ -1,25 +1,31 @@
 // ============================================================
-// 吹牛酒肆 - 扑克牌游戏引擎（骗子酒吧规则）
-// 牌组：同花色6张 + 小丑牌2张 = 8张，每人发满手牌
-// 惩罚机制：每人6瓶酒（1瓶蒙汗药），输家从剩余酒瓶中选一瓶喝
+// 吹牛酒肆 - 扑克牌游戏引擎（核心规则复刻版）
+// 牌组：Q×6 + K×6 + A×6 + Joker×2 = 20张
+// 每人发 5 张手牌；系统随机指定本局目标牌（Q/K/A）
+// 出牌：每次 1-3 张，扣下声称全是目标牌
+// 质疑：翻开最后出的牌，只要有一张既不是目标牌也不是 Joker → 撒谎
+// 惩罚：输家从 6 瓶中随机（或手动）选一瓶，中毒即出局；喝后洗牌重发
 // ============================================================
 
 import { GameEngine, RoundStartData, ChallengeData } from './base/GameEngine';
 import {
-  Room, Player, CardSuit, CardBid,
+  Room, Player, CardValue, CardBid,
   CardChallengeResult, BottlePunishment, DiceFace
 } from '../types';
 
-// 骗子酒吧标准花色：黑桃/红心/方块/梅花
-const SUITS: CardSuit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
-const HAND_SIZE = 8; // 每人8张手牌（6张同花色 + 2张小丑）
+const CARD_VALUES: CardValue[] = ['Q', 'K', 'A'];
+const HAND_SIZE = 5;  // 每人 5 张手牌
+const MAX_PLAY = 3;   // 每次最多出 3 张
+const BOTTLE_COUNT = 6;
 
-// 生成一副骗子酒吧牌组：6张同花色 + 2张小丑
-function makeDeck(suit: CardSuit): CardSuit[] {
-  return [
-    ...Array(6).fill(suit),
-    ...Array(2).fill('joker'),
-  ] as CardSuit[];
+// 生成完整牌组：Q×6 + K×6 + A×6 + Joker×2 = 20 张
+function makeFullDeck(): CardValue[] {
+  const deck: CardValue[] = [];
+  for (const v of CARD_VALUES) {
+    for (let i = 0; i < 6; i++) deck.push(v);
+  }
+  deck.push('Joker', 'Joker');
+  return deck;
 }
 
 export class CardGame extends GameEngine {
@@ -30,7 +36,7 @@ export class CardGame extends GameEngine {
     this.room.lastPunishment = null;
   }
 
-  // ── ROLLING → CALLING ─────────────────────────────────────
+  // ── ROLLING → BIDDING ─────────────────────────────────────
   startRound(): RoundStartData {
     this.room.phase = 'rolling';
     this.room.currentCardBid = null;
@@ -41,14 +47,21 @@ export class CardGame extends GameEngine {
 
     const playerCount = this.room.players.length;
 
-    // 本局主花色（随机选一种）
-    const masterSuit = SUITS[this.secureRandInt(0, SUITS.length - 1)];
-    this.room.masterSuit = masterSuit;
+    // 随机指定本局目标牌（Q / K / A）
+    const targetCard = CARD_VALUES[this.secureRandInt(0, CARD_VALUES.length - 1)];
+    this.room.targetCard = targetCard;
 
-    // 每人发独立一副牌：6张主花色 + 2张小丑，洗牌后发出
+    // 从完整牌组洗牌，给每位玩家各发 5 张
+    const deck = this.shuffle(makeFullDeck());
+    let deckIdx = 0;
     this.room.players.forEach(p => {
-      const deck = this.shuffle(makeDeck(masterSuit));
-      p.hand = deck.slice(0, HAND_SIZE);
+      p.hand = deck.slice(deckIdx, deckIdx + HAND_SIZE);
+      deckIdx += HAND_SIZE;
+      // 极端情况牌不够时，再抽一副补齐
+      if (p.hand.length < HAND_SIZE) {
+        const extra = this.shuffle(makeFullDeck());
+        p.hand = [...p.hand, ...extra].slice(0, HAND_SIZE);
+      }
     });
 
     if (this.room.currentPlayerIndex >= playerCount) {
@@ -56,38 +69,29 @@ export class CardGame extends GameEngine {
     }
     this.room.phase = 'bidding';
 
-    const privateData = new Map<string, { dice: DiceFace[]; hand: CardSuit[] }>();
+    const privateData = new Map<string, { dice: DiceFace[]; hand: CardValue[] }>();
     this.room.players.forEach(p => {
-      privateData.set(p.id, { dice: [], hand: [...p.hand] });
+      privateData.set(p.id, { dice: [], hand: [...p.hand] as CardValue[] });
     });
-    return { room: this.toPublicView(), playerPrivateData: privateData };
+    return { room: this.toPublicView(), playerPrivateData: privateData as any };
   }
 
-  // ── CALLING：出牌 ──────────────────────────────────────────
-  // 加码规则：声称数量必须 > 上家声称数量（花色随意声称，可以说谎）
+  // ── BIDDING：出牌 ─────────────────────────────────────────
+  // 玩家选 1-3 张牌扣下，固定声称「全是目标牌」
   placeBid(playerId: string, bidData: unknown): string | null {
     if (this.room.phase !== 'bidding') return '当前不是出牌阶段';
-    const { cards, claimSuit, claimQuantity } =
-      bidData as { cards: CardSuit[]; claimSuit: CardSuit; claimQuantity: number };
+    const { cards, claimQuantity } =
+      bidData as { cards: CardValue[]; claimQuantity: number };
 
     const currentPlayer = this.getCurrentPlayer();
     if (!currentPlayer || currentPlayer.id !== playerId) return '还没轮到你出牌';
-    if (!Array.isArray(cards) || cards.length < 1 || cards.length > 5) return '每次须出1到5张牌';
-    if (claimQuantity < 1 || claimQuantity > 5) return '声称数量须为1-5';
-    if (!SUITS.includes(claimSuit as any)) {
-      return `声称花色无效（可选：${SUITS.join('/')}）`;
-    }
-
-    // ── 加码验证：声称数量必须严格大于上家 ──────────────────
-    const prev = this.room.currentCardBid;
-    if (prev) {
-      if (claimQuantity <= prev.quantity) {
-        return `出牌数量须大于上家（上家喊了 ${prev.quantity} 张，你须喊 ${prev.quantity + 1} 张以上）`;
-      }
-    }
+    if (!Array.isArray(cards) || cards.length < 1 || cards.length > MAX_PLAY)
+      return `每次须出 1 到 ${MAX_PLAY} 张牌`;
+    if (claimQuantity < 1 || claimQuantity > MAX_PLAY)
+      return `声称数量须为 1-${MAX_PLAY}`;
 
     // 验证手牌合法性
-    const handCopy = [...currentPlayer.hand];
+    const handCopy = [...currentPlayer.hand] as CardValue[];
     for (const c of cards) {
       const idx = handCopy.indexOf(c);
       if (idx === -1) return `手牌中没有 ${c}，请勿作弊`;
@@ -99,7 +103,7 @@ export class CardGame extends GameEngine {
       playerId,
       playerName: currentPlayer.name,
       quantity: claimQuantity,
-      suit: claimSuit,
+      targetCard: this.room.targetCard!,
       actualCards: cards,
     };
     this.room.currentCardBid = bid;
@@ -108,7 +112,9 @@ export class CardGame extends GameEngine {
     return null;
   }
 
-  // ── CHALLENGING → 进入选酒阶段 ────────────────────────────
+  // ── CHALLENGING ───────────────────────────────────────────
+  // 质疑判定：翻开上家最后打出的牌
+  // 只要有一张既不是目标牌、也不是 Joker → 判定撒谎
   challenge(challengerId: string): ChallengeData | { error: string } {
     if (this.room.phase !== 'bidding') return { error: '当前不是出牌阶段' };
     const bid = this.room.currentCardBid;
@@ -117,17 +123,18 @@ export class CardGame extends GameEngine {
     if (!currentPlayer || currentPlayer.id !== challengerId) return { error: '还没轮到你质疑' };
 
     this.room.phase = 'challenge';
-    const master = this.room.masterSuit!;
-    // 小丑牌万能，可以充当任意花色
-    const validCount = bid.actualCards.filter(c => c === master || c === 'joker').length;
-    const bidSuccess = validCount >= bid.quantity;
+    const target = this.room.targetCard!;
+
+    // 有任意一张牌不是目标牌且不是 Joker → 撒谎
+    const isLiar = bid.actualCards.some(c => c !== target && c !== 'Joker');
+    const bidSuccess = !isLiar; // bidSuccess=true 表示出牌者没撒谎
     const loserId = bidSuccess ? challengerId : bid.playerId;
 
     const loserPlayer = this.room.players.find(p => p.id === loserId)!;
-    const challenger = this.room.players.find(p => p.id === challengerId)!;
-    const bidder = this.room.players.find(p => p.id === bid.playerId)!;
+    const challenger   = this.room.players.find(p => p.id === challengerId)!;
+    const bidder       = this.room.players.find(p => p.id === bid.playerId)!;
 
-    // 进入选酒阶段（punishment 阶段等待玩家选酒）
+    // 进入选酒惩罚阶段
     this.room.phase = 'punishment';
     this.room.pickingPlayerId = loserId;
 
@@ -146,20 +153,22 @@ export class CardGame extends GameEngine {
       room: this.toPublicView(),
     };
 
-    const privateData = new Map<string, { dice: DiceFace[]; hand: CardSuit[] }>();
+    const privateData = new Map<string, { dice: DiceFace[]; hand: CardValue[] }>();
     this.room.players.forEach(p =>
-      privateData.set(p.id, { dice: [], hand: [...p.hand] })
+      privateData.set(p.id, { dice: [], hand: [...p.hand] as CardValue[] })
     );
-    return { result, playerPrivateData: privateData };
+    return { result, playerPrivateData: privateData as any };
   }
 
   // ── 玩家选酒 ──────────────────────────────────────────────
+  // 输家从剩余 6 瓶中选一瓶；中毒则出局
+  // 无论结果，喝完后重置酒瓶（下回合洗牌重发）
   pickBottle(playerId: string, bottleIndex: number): BottlePunishment | { error: string } {
     if (this.room.phase !== 'punishment') return { error: '当前不是惩罚阶段' };
     if (this.room.pickingPlayerId !== playerId) return { error: '不是你选酒' };
 
     const loser = this.room.players.find(p => p.id === playerId);
-    if (!loser) return { error: '找不到玩家' };
+    if (!loser)         return { error: '找不到玩家' };
     if (!loser.bottles) return { error: '酒瓶状态异常' };
 
     const { remaining, poisonSlot } = loser.bottles;
@@ -173,14 +182,10 @@ export class CardGame extends GameEngine {
     if (poisoned) {
       loser.lives -= 1;
       livesLost = 1;
-      // 中毒后重置6瓶（新一局重新开始）
-      loser.bottles = this.createBottleState();
-    } else if (loser.bottles.remaining.length === 0) {
-      // 最后一瓶喝完还没中毒（理论上不会，毒瓶被留到最后），兜底
-      loser.lives -= 1;
-      livesLost = 1;
-      loser.bottles = this.createBottleState();
     }
+
+    // 无论中毒与否，喝完后重置 6 瓶（核心规则：每次质疑结算后洗牌重发）
+    loser.bottles = this.createBottleState();
 
     this.room.pickingPlayerId = null;
 
@@ -202,6 +207,7 @@ export class CardGame extends GameEngine {
 
     if (!isGameOver) {
       this.room.phase = 'result';
+      // 输家成为下一回合第一个出牌者
       const loserIdx = this.room.players.findIndex(p => p.id === playerId);
       this.room.currentPlayerIndex = loserIdx >= 0 ? loserIdx : 0;
     }
@@ -213,21 +219,21 @@ export class CardGame extends GameEngine {
   aiDecide(playerId: string): { action: 'bid'; data: unknown } | { action: 'challenge' } {
     const player = this.room.players.find(p => p.id === playerId);
     if (!player || player.hand.length === 0) return { action: 'challenge' };
-    const master = this.room.masterSuit!;
-    const prev = this.room.currentCardBid;
 
-    // 若上家喊了 5 张（最大值），无法加码，必须质疑
-    if (prev && prev.quantity >= 5) return { action: 'challenge' };
+    const target = this.room.targetCard!;
+    const prev   = this.room.currentCardBid;
 
-    if (!prev) return this.aiMakeBid(player, master, null);
+    // 没有上家出牌时直接出牌
+    if (!prev) return this.aiMakeBid(player, target);
 
-    // 根据手里主花色+小丑牌数量判断是否质疑
-    const masterCards = player.hand.filter(c => c === master || c === 'joker');
-    const handSize = player.hand.length;
-    const overRatio = prev.quantity / Math.max(masterCards.length, 0.5);
-    const challengeProb = Math.min(0.85, Math.max(0.05, (overRatio - 0.8) * 0.5));
+    // 根据手里目标牌+Joker数量决定是否质疑
+    const validCards = player.hand.filter(c => c === target || c === 'Joker');
+    const bluffRatio = prev.quantity / Math.max(validCards.length, 0.5);
+    // bluffRatio 越高，AI 越倾向质疑
+    const challengeProb = Math.min(0.85, Math.max(0.05, (bluffRatio - 0.8) * 0.5));
     if (Math.random() < challengeProb) return { action: 'challenge' };
-    return this.aiMakeBid(player, master, prev.quantity);
+
+    return this.aiMakeBid(player, target);
   }
 
   // AI 选酒：随机选一瓶
@@ -238,43 +244,35 @@ export class CardGame extends GameEngine {
     return remaining[this.secureRandInt(0, remaining.length - 1)];
   }
 
+  // ── 私有工具 ─────────────────────────────────────────────
   private createBottleState() {
-    const poisonSlot = this.secureRandInt(0, 5);
+    const poisonSlot = this.secureRandInt(0, BOTTLE_COUNT - 1);
     return {
-      remaining: [0, 1, 2, 3, 4, 5],
+      remaining: Array.from({ length: BOTTLE_COUNT }, (_, i) => i),
       poisonSlot,
     };
   }
 
   private aiMakeBid(
     player: Player,
-    master: CardSuit,
-    prevQty: number | null
+    target: CardValue,
   ): { action: 'bid'; data: unknown } | { action: 'challenge' } {
-    const minQty = prevQty !== null ? prevQty + 1 : 1;
-    const maxQty = Math.min(player.hand.length, 5);
+    const validCards  = player.hand.filter(c => c === target || c === 'Joker') as CardValue[];
+    const otherCards  = player.hand.filter(c => c !== target && c !== 'Joker') as CardValue[];
 
-    if (minQty > maxQty) return { action: 'challenge' };
+    // AI 随机出 1-3 张（不超过手牌数）
+    const maxPlay  = Math.min(MAX_PLAY, player.hand.length);
+    const numPlay  = this.secureRandInt(1, maxPlay);
 
-    const claimQuantity = this.secureRandInt(minQty, maxQty);
+    // 优先出目标牌/Joker，不够就混入非目标牌（撒谎）
+    const cards: CardValue[] = [
+      ...validCards.slice(0, numPlay),
+      ...otherCards.slice(0, Math.max(0, numPlay - validCards.length)),
+    ].slice(0, numPlay);
 
-    const masterCards = player.hand.filter(c => c === master || c === 'joker');
-    const otherCards  = player.hand.filter(c => c !== master && c !== 'joker');
+    if (cards.length === 0) return { action: 'challenge' };
 
-    // 优先打主花色/小丑牌，不够则混入其他花色（虚张声势）
-    if (masterCards.length >= claimQuantity) {
-      return { action: 'bid', data: {
-        cards: masterCards.slice(0, claimQuantity),
-        claimSuit: master,
-        claimQuantity,
-      }};
-    }
-    const combined = [...masterCards, ...otherCards].slice(0, claimQuantity);
-    return { action: 'bid', data: {
-      cards: combined,
-      claimSuit: master,
-      claimQuantity,
-    }};
+    return { action: 'bid', data: { cards, claimQuantity: numPlay } };
   }
 
   private shuffle<T>(arr: T[]): T[] {
