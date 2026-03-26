@@ -115,7 +115,7 @@
           <div v-else-if="roomList.length===0" class="text-center py-8">
             <p class="text-3xl mb-3">🍃</p>
             <p class="text-sm opacity-40 tracking-widest">暂无开放中的酒肆</p>
-            <button @click="joinGame" class="btn-gold mt-4 text-xs px-6">新开一桌</button>
+            <button @click="showRoomList=false" class="btn-gold mt-4 text-xs px-6">新开一桌</button>
           </div>
           <div v-else class="space-y-2">
             <div v-for="r in roomList" :key="r.roomId"

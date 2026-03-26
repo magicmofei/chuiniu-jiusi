@@ -19,6 +19,7 @@
         <span class="text-xs" :style="{color:store.connected?'var(--jade)':'var(--vermillion)'}">{{ store.connected?'●':'○' }}</span>
         <button @click="soundEnabled=!soundEnabled" class="text-sm opacity-40 hover:opacity-80">{{ soundEnabled?'🔊':'🔇' }}</button>
         <button @click="showChat=!showChat" class="text-xs opacity-40 hover:opacity-80">💬<span v-if="unreadCount>0" class="ml-0.5 text-red-400 font-bold">{{ unreadCount }}</span></button>
+        <button v-if="store.phase!=='gameOver'" @click="confirmLeave" class="text-xs px-2 py-1 rounded border opacity-40 hover:opacity-100 transition-opacity" style="border-color:rgba(255,255,255,0.15);color:rgba(255,255,255,0.6)">起身离开</button>
       </div>
     </header>
 
@@ -193,6 +194,13 @@ function onCardPlay(cards: CardSuit[], claimSuit: CardSuit, claimQty: number) {
 }
 function onPickBottle(bottleIndex: number) { store.pickBottle(bottleIndex); }
 function backToLobby() { store.disconnect(); router.push('/'); }
+function confirmLeave() {
+  if (store.phase === 'waiting' || store.phase === 'gameOver') {
+    backToLobby();
+  } else if (confirm('确定要起身离开？游戏将由AI接管你的位置。')) {
+    backToLobby();
+  }
+}
 function downloadReplay() { replay.download(); }
 
 // 刷新重连：若 store 中无 roomId，尝试从 localStorage 恢复 session
