@@ -15,7 +15,7 @@ import {
 
 const CARD_VALUES: CardValue[] = ['Q', 'K', 'A'];
 const HAND_SIZE = 5;  // 每人 5 张手牌
-const MAX_PLAY = 3;   // 每次最多出 3 张
+const MAX_PLAY = 5;   // 每次最多出 5 张（最多手牌数）
 const BOTTLE_COUNT = 6;
 
 // 生成完整牌组：Q×6 + K×6 + A×6 + Joker×2 = 20 张
@@ -77,18 +77,15 @@ export class CardGame extends GameEngine {
   }
 
   // ── BIDDING：出牌 ─────────────────────────────────────────
-  // 玩家选 1-3 张牌扣下，固定声称「全是目标牌」
+  // 玩家选 1-5 张牌扣下，声称数 = 实际出牌数（全声称是目标牌）
   placeBid(playerId: string, bidData: unknown): string | null {
     if (this.room.phase !== 'bidding') return '当前不是出牌阶段';
-    const { cards, claimQuantity } =
-      bidData as { cards: CardValue[]; claimQuantity: number };
+    const { cards } = bidData as { cards: CardValue[]; claimQuantity?: number };
 
     const currentPlayer = this.getCurrentPlayer();
     if (!currentPlayer || currentPlayer.id !== playerId) return '还没轮到你出牌';
     if (!Array.isArray(cards) || cards.length < 1 || cards.length > MAX_PLAY)
       return `每次须出 1 到 ${MAX_PLAY} 张牌`;
-    if (claimQuantity < 1 || claimQuantity > MAX_PLAY)
-      return `声称数量须为 1-${MAX_PLAY}`;
 
     // 验证手牌合法性
     const handCopy = [...currentPlayer.hand] as CardValue[];
@@ -102,7 +99,7 @@ export class CardGame extends GameEngine {
     const bid: CardBid = {
       playerId,
       playerName: currentPlayer.name,
-      quantity: claimQuantity,
+      quantity: cards.length, // 声称数 = 实际出牌数
       targetCard: this.room.targetCard!,
       actualCards: cards,
     };

@@ -397,13 +397,13 @@ export const useGameStore = defineStore('game', () => {
   function diceChallenge() {
     socket.value?.emit('player:diceChallenge'); addLog('你发起质疑！'); replay.push('diceChallenge', {});
   }
-  function cardPlay(cards: CardValue[], claimQuantity: number) {
-    socket.value?.emit('player:cardPlay', { cards, claimQuantity });
+  function cardPlay(cards: CardValue[]) {
+    socket.value?.emit('player:cardPlay', { cards });
     // 立即在台面显示本人的牌背（乐观更新，服务端 stateUpdate 会去重）
     tableCardStacks.value.push({
       playerId: myId.value,
       playerName: myName.value,
-      count: claimQuantity,
+      count: cards.length,
     });
     // 立即从手牌中移除已打出的牌（乐观更新）
     const handCopy = [...myHand.value];
@@ -412,8 +412,8 @@ export const useGameStore = defineStore('game', () => {
       if (idx !== -1) handCopy.splice(idx, 1);
     }
     myHand.value = handCopy;
-    addLog(`你出牌：声称 ${claimQuantity} 张目标牌（实出 ${cards.join('/')}）`);
-    replay.push('cardPlay', { cards, claimQuantity });
+    addLog(`你出牌：${cards.length} 张（声称全是目标牌）`);
+    replay.push('cardPlay', { cards, claimQuantity: cards.length });
   }
   function cardChallenge() {
     socket.value?.emit('player:cardChallenge'); addLog('你发起质疑！'); replay.push('cardChallenge', {});

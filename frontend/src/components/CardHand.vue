@@ -27,22 +27,19 @@
       <div v-if="!hand.length" class="text-sm opacity-20 tracking-wider">🃏 暂无手牌</div>
     </div>
 
-    <!-- 出牌控制：选中后声称张数 -->
+    <!-- 出牌控制：选中即声称，无需单独设置声称数 -->
     <div v-if="hasSelected && !disabled" class="mt-4 flex items-center gap-3 flex-wrap slide-down">
-      <div class="flex items-center gap-1">
-        <span class="text-xs opacity-60 mr-1">声称张数：</span>
-        <button @click="claimQty = Math.max(1, claimQty - 1)" class="w-7 h-7 rounded border text-sm" style="border-color:rgba(212,168,67,0.3);color:var(--gold)">−</button>
-        <span class="w-6 text-center font-bold" style="color:var(--parchment)">{{ claimQty }}</span>
-        <button @click="claimQty = Math.min(3, claimQty + 1)" class="w-7 h-7 rounded border text-sm" style="border-color:rgba(212,168,67,0.3);color:var(--gold)">+</button>
-      </div>
-      <span class="text-xs opacity-40">（声称全是&nbsp;<strong style="color:var(--gold)">{{ targetCard ?? '目标牌' }}</strong>）</span>
+      <span class="text-xs opacity-60">
+        已选 <strong style="color:var(--gold)">{{ selected.length }}</strong> 张
+        · 声称全是&nbsp;<strong style="color:var(--gold)">{{ targetCard ?? '目标牌' }}</strong>
+      </span>
       <button @click="playCards" class="btn-gold text-xs px-4 py-1.5">出牌！</button>
-      <button @click="selected = []; claimQty = 1" class="text-xs opacity-40 hover:opacity-70">取消</button>
+      <button @click="selected = []" class="text-xs opacity-40 hover:opacity-70">取消</button>
     </div>
 
-    <!-- 已选提示 -->
-    <p v-if="hasSelected && !disabled" class="text-xs opacity-30 mt-2">
-      已选 {{ selected.length }} 张，声称 {{ claimQty }} 张（可多选少报或少选多报来吹牛）
+    <p v-if="!hasSelected && !disabled && hand.length > 0" class="text-xs opacity-20 mt-2">
+      点击选牌（1-{{ Math.min(5, hand.length) }} 张），选完后点「出牌！」
+    </p>
     </p>
   </div>
 </template>
@@ -58,13 +55,10 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  play: [cards: CardValue[], claimQty: number]
+  play: [cards: CardValue[]]
 }>();
 
-// 用 ref<number[]> 而非 reactive(Set) — Vue 3 能正确追踪数组变化
 const selected = ref<number[]>([]);
-const claimQty = ref(1);
-
 const hasSelected = computed(() => selected.value.length > 0);
 
 function isSelected(i: number) {
@@ -75,22 +69,17 @@ function toggleSelect(i: number) {
   if (props.disabled) return;
   const idx = selected.value.indexOf(i);
   if (idx >= 0) {
-    // 取消选中
     selected.value = selected.value.filter(x => x !== i);
-  } else if (selected.value.length < 3) {
-    // 选中（最多3张）
+  } else if (selected.value.length < Math.min(5, props.hand.length)) {
     selected.value = [...selected.value, i];
-    // 声称张数跟随选牌数
-    claimQty.value = selected.value.length;
   }
 }
 
 function playCards() {
   if (selected.value.length === 0) return;
   const cards = selected.value.map(i => props.hand[i]);
-  emit('play', cards, claimQty.value);
+  emit('play', cards);
   selected.value = [];
-  claimQty.value = 1;
 }
 
 function cardColor(card: CardValue) {
@@ -98,17 +87,12 @@ function cardColor(card: CardValue) {
   if (card === 'K') return 'poker-card--king';
   return 'poker-card--queen';
 }
-
 function cardCorner(card: CardValue) {
-  if (card === 'Joker') return '★';
-  return card;
+  return card === 'Joker' ? '★' : card;
 }
-
 function cardCenter(card: CardValue) {
   if (card === 'Joker') return '🃏';
-  if (card === 'A') return 'A';
-  if (card === 'K') return 'K';
-  return 'Q';
+  return card;
 }
 </script>
 

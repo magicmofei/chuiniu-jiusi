@@ -329,7 +329,7 @@ export interface ClientToServerEvents {
   ) => void;
   'player:diceBid': (bid: { quantity: number; face: DiceFace }) => void;
   'player:diceChallenge': () => void;
-  'player:cardPlay': (data: { cards: CardValue[]; claimQuantity: number }) => void;
+  'player:cardPlay': (data: { cards: CardValue[] }) => void;
   'player:cardChallenge': () => void;
   'player:pickBottle': (data: { bottleIndex: number }) => void;
   'chat:send': (data: { text: string; type: string }) => void;

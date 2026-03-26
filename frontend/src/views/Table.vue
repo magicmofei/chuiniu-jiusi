@@ -174,8 +174,8 @@ function onChallenge() {
   if (soundEnabled.value) { sound.challengePress(); inkSplash(); }
   store.gameMode === 'dice' ? store.diceChallenge() : store.cardChallenge();
 }
-function onCardPlay(cards: CardValue[], claimQty: number) {
-  store.cardPlay(cards, claimQty);
+function onCardPlay(cards: CardValue[]) {
+  store.cardPlay(cards);
 }
 function onPickBottle(bottleIndex: number) { store.pickBottle(bottleIndex); }
 function backToLobby() { store.disconnect(); router.push('/'); }
