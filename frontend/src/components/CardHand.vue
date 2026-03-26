@@ -14,7 +14,7 @@
         :disabled="disabled"
         class="poker-card"
         :class="[
-          selected.has(i) ? 'poker-card--selected' : '',
+          isSelected(i) ? 'poker-card--selected' : '',
           disabled ? 'poker-card--disabled' : '',
           card === 'Joker' ? 'poker-card--joker' : cardColor(card),
         ]"
@@ -28,7 +28,7 @@
     </div>
 
     <!-- 出牌控制：选中后声称张数 -->
-    <div v-if="selected.size > 0 && !disabled" class="mt-4 flex items-center gap-3 flex-wrap slide-down">
+    <div v-if="hasSelected && !disabled" class="mt-4 flex items-center gap-3 flex-wrap slide-down">
       <div class="flex items-center gap-1">
         <span class="text-xs opacity-60 mr-1">声称张数：</span>
         <button @click="claimQty = Math.max(1, claimQty - 1)" class="w-7 h-7 rounded border text-sm" style="border-color:rgba(212,168,67,0.3);color:var(--gold)">−</button>
@@ -37,18 +37,18 @@
       </div>
       <span class="text-xs opacity-40">（声称全是&nbsp;<strong style="color:var(--gold)">{{ targetCard ?? '目标牌' }}</strong>）</span>
       <button @click="playCards" class="btn-gold text-xs px-4 py-1.5">出牌！</button>
-      <button @click="selected.clear(); claimQty = 1" class="text-xs opacity-40 hover:opacity-70">取消</button>
+      <button @click="selected = []; claimQty = 1" class="text-xs opacity-40 hover:opacity-70">取消</button>
     </div>
 
     <!-- 已选提示 -->
-    <p v-if="selected.size > 0 && !disabled" class="text-xs opacity-30 mt-2">
-      已选 {{ selected.size }} 张，声称 {{ claimQty }} 张（可多选少报或少选多报来吹牛）
+    <p v-if="hasSelected && !disabled" class="text-xs opacity-30 mt-2">
+      已选 {{ selected.length }} 张，声称 {{ claimQty }} 张（可多选少报或少选多报来吹牛）
     </p>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue';
+import { ref, computed } from 'vue';
 import type { CardValue } from '../stores/gameStore';
 
 const props = defineProps<{
@@ -61,26 +61,35 @@ const emit = defineEmits<{
   play: [cards: CardValue[], claimQty: number]
 }>();
 
-const selected = reactive(new Set<number>());
+// 用 ref<number[]> 而非 reactive(Set) — Vue 3 能正确追踪数组变化
+const selected = ref<number[]>([]);
 const claimQty = ref(1);
+
+const hasSelected = computed(() => selected.value.length > 0);
+
+function isSelected(i: number) {
+  return selected.value.includes(i);
+}
 
 function toggleSelect(i: number) {
   if (props.disabled) return;
-  if (selected.has(i)) {
-    selected.delete(i);
-  } else if (selected.size < 3) {
-    // 最多选 3 张
-    selected.add(i);
-    // 默认声称张数跟随选牌数
-    claimQty.value = selected.size;
+  const idx = selected.value.indexOf(i);
+  if (idx >= 0) {
+    // 取消选中
+    selected.value = selected.value.filter(x => x !== i);
+  } else if (selected.value.length < 3) {
+    // 选中（最多3张）
+    selected.value = [...selected.value, i];
+    // 声称张数跟随选牌数
+    claimQty.value = selected.value.length;
   }
 }
 
 function playCards() {
-  if (selected.size === 0) return;
-  const cards = [...selected].map(i => props.hand[i]);
+  if (selected.value.length === 0) return;
+  const cards = selected.value.map(i => props.hand[i]);
   emit('play', cards, claimQty.value);
-  selected.clear();
+  selected.value = [];
   claimQty.value = 1;
 }
 
