@@ -201,7 +201,6 @@ function broadcastChallengeResult(
 
     // 随机选一瓶（服务端决定，保证所有客户端一致）
     const remaining = loserPlayer.bottles.remaining;
-    const engine = rm.getEngine(roomId) as CardGame;
     const bottleIndex = remaining[Math.floor(Math.random() * remaining.length)];
 
     // 广播「已选瓶」事件，前端播放喝酒动画
@@ -211,15 +210,11 @@ function broadcastChallengeResult(
       bottleIndex,
     });
 
-    // 设置 drinking lock
-    const drinkingLock = `drinking:${loserId}`;
-    room.pickingPlayerId = drinkingLock;
-
     // 动画结束后结算中毒判定（2.2秒后）
     setTimeout(() => {
       const latestRoom = rm.getRoom(roomId);
       if (!latestRoom || latestRoom.phase !== 'punishment') return;
-      if (latestRoom.pickingPlayerId !== drinkingLock) return;
+      if (latestRoom.pickingPlayerId !== loserId) return;
       const latestEngine = rm.getEngine(roomId) as CardGame;
       if (!latestEngine) return;
 
