@@ -173,6 +173,8 @@ export const useGameStore = defineStore('game', () => {
   const winnerBanner  = ref(false);
   const bottlePickPrompt  = ref<{ loserId: string; loserName: string; remainingBottles: number[] } | null>(null);
   const pendingBottlePick = ref<{ loserId: string; loserName: string; bottleIndex: number } | null>(null);
+  // 缓存：若惩罚弹窗还在显示时收到 roundStart，先缓存，关弹窗后再应用
+  const pendingRoundStart = ref<{ room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardSuit[] } | null>(null);
 
   function addLog(msg: string) {
     gameLog.value.unshift(`[${new Date().toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}] ${msg}`);
@@ -191,10 +193,14 @@ export const useGameStore = defineStore('game', () => {
   });
 
   function _registerCommonEvents(s: Socket) {
+    // 先清除所有旧监听器，防止多次调用（重连/组件重挂）导致事件触发多次
+    s.removeAllListeners();
     s.on('disconnect', () => { connected.value = false; addLog('与服务器断开连接'); });
     s.on('error', (msg: string) => { errorMsg.value = msg; });
     s.on('room:update', (r: RoomPublicView) => { room.value = r; gameMode.value = r.mode; });
     s.on('game:stateUpdate', (r: RoomPublicView) => {
+      // 若惩罚弹窗正在显示，跳过 stateUpdate 以免中途清掉 punishment 状态
+      if (showPunishment.value) return;
       const prevDiceBid = room.value?.currentDiceBid;
       const prevCardBid = room.value?.currentCardBid;
       room.value = r;
@@ -267,16 +273,13 @@ export const useGameStore = defineStore('game', () => {
       showingOpeningQuotes.value = true;
     });
     s.on('game:roundStart', (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardSuit[] }) => {
-      room.value = data.room;
-      myDice.value = data.yourDice;
-      myHand.value = data.yourHand;
-      challengeResult.value = null;
-      showPunishment.value = false;
-      bottlePickPrompt.value = null;
-      pendingBottlePick.value = null;
-      diceRolling.value = true;
-      setTimeout(() => { diceRolling.value = false; }, 700);
-      addLog(`第 ${data.room.round} 回合开始`);
+      // 若惩罚弹窗还在显示，先缓存，等弹窗关闭后再应用
+      if (showPunishment.value) {
+        pendingRoundStart.value = data;
+        addLog(`第 ${data.room.round} 回合准备中，等待结算弹窗关闭…`);
+        return;
+      }
+      _applyRoundStart(data);
     });
     s.on('player:challenge', (result: ChallengeResult) => {
       challengeResult.value = result;
@@ -313,6 +316,8 @@ export const useGameStore = defineStore('game', () => {
   function spectate(name: string, avatar: string, targetRoomId: string) {
     myName.value = name; myAvatar.value = avatar; isSpectator.value = true;
     const s = connectSocket(); socket.value = s;
+    // 先清理旧监听器，再注册 connect，顺序不能颠倒
+    _registerCommonEvents(s);
     s.on('connect', () => {
       connected.value = true; myId.value = s.id ?? '';
       s.emit('room:spectate', { name, avatar, roomId: targetRoomId }, (res: any) => {
@@ -320,12 +325,14 @@ export const useGameStore = defineStore('game', () => {
         else { errorMsg.value = res.error ?? '观战失败'; }
       });
     });
-    _registerCommonEvents(s);
+    if (!s.connected) s.connect();
   }
 
   function connect(name: string, avatar: string, mode: GameMode = 'card', targetRoomId?: string, characterId?: string) {
     myName.value = name; myAvatar.value = avatar; gameMode.value = mode; isSpectator.value = false;
     const s = connectSocket(); socket.value = s;
+    // 先清理旧监听器，再注册 connect，顺序不能颠倒
+    _registerCommonEvents(s);
     s.on('connect', () => {
       connected.value = true; myId.value = s.id ?? '';
       s.emit('room:join', { name, avatar, mode, roomId: targetRoomId, characterId }, (res: any) => {
@@ -343,7 +350,21 @@ export const useGameStore = defineStore('game', () => {
         else { errorMsg.value = res.error ?? '加入失败'; }
       });
     });
-    _registerCommonEvents(s);
+    if (!s.connected) s.connect();
+  }
+
+  function _applyRoundStart(data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardSuit[] }) {
+    room.value = data.room;
+    myDice.value = data.yourDice;
+    myHand.value = data.yourHand;
+    challengeResult.value = null;
+    showPunishment.value = false;
+    bottlePickPrompt.value = null;
+    pendingBottlePick.value = null;
+    pendingRoundStart.value = null;
+    diceRolling.value = true;
+    setTimeout(() => { diceRolling.value = false; }, 700);
+    addLog(`第 ${data.room.round} 回合开始`);
   }
 
   function ready() { socket.value?.emit('room:ready'); }
@@ -376,6 +397,8 @@ export const useGameStore = defineStore('game', () => {
   }
   function reconnect(targetRoomId: string, playerId: string) {
     const s = connectSocket(); socket.value = s;
+    // 先清理旧监听器，再注册 connect，顺序不能颠倒
+    _registerCommonEvents(s);
     s.on('connect', () => {
       connected.value = true; myId.value = s.id ?? '';
       s.emit('room:reconnect', { roomId: targetRoomId, playerId }, (res: any) => {
@@ -396,7 +419,7 @@ export const useGameStore = defineStore('game', () => {
         }
       });
     });
-    _registerCommonEvents(s);
+    if (!s.connected) s.connect();
   }
   function disconnect() {
     disconnectSocket(); socket.value = null; connected.value = false;
@@ -406,6 +429,7 @@ export const useGameStore = defineStore('game', () => {
     bottlePickPrompt.value = null; pendingBottlePick.value = null;
     chatMessages.value = []; gameLog.value = [];
     winnerBanner.value = false; isSpectator.value = false;
+    pendingRoundStart.value = null;
     openingQuotes.value = []; showingOpeningQuotes.value = false; selectedCharacter.value = null;
     // 清除本地 session
     localStorage.removeItem('chuiniu_session');
@@ -418,14 +442,20 @@ export const useGameStore = defineStore('game', () => {
   function skipOpeningQuotes() { showingOpeningQuotes.value = false; }
   function selectCharacter(char: HistoricalCharacter) { selectedCharacter.value = char; }
   function clearError() { errorMsg.value = ''; }
-  function closePunishment() { showPunishment.value = false; }
+  function closePunishment() {
+    showPunishment.value = false;
+    // 若有缓存的 roundStart，现在应用
+    if (pendingRoundStart.value) {
+      _applyRoundStart(pendingRoundStart.value);
+    }
+  }
   function setOpeningQuote(_q: string) { /* legacy compat – handled by game:openingQuotes event */ }
 
   return {
     myId, myName, myAvatar, myDice, myHand,
     roomId, room, challengeResult, errorMsg,
     connected, socket, showPunishment, gameMode,
-    bottlePickPrompt, pendingBottlePick,
+    bottlePickPrompt, pendingBottlePick, pendingRoundStart,
     chatMessages, gameLog, diceRolling, winnerBanner,
     phase, isMyTurn, me, currentPlayer, isSpectator,
     selectedCharacter, openingQuotes, showingOpeningQuotes, currentQuoteIndex,
