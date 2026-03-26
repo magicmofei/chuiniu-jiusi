@@ -193,23 +193,57 @@ function broadcastChallengeResult(
     return;
   }
 
-  // ── 牌模式：进入选酒阶段 ──────────────────────────────
+  // ── 牌模式：服务端自动随机选酒（无需玩家手动操作）──────
   if (result.type === 'card') {
     const loserId = result.loserId;
     const loserPlayer = room.players.find(p => p.id === loserId);
     if (!loserPlayer || !loserPlayer.bottles) return;
 
-    // 通知输家（和旁观者）进入选酒阶段
-    io.to(roomId).emit('card:pickBottle', {
+    // 随机选一瓶（服务端决定，保证所有客户端一致）
+    const remaining = loserPlayer.bottles.remaining;
+    const engine = rm.getEngine(roomId) as CardGame;
+    const bottleIndex = remaining[Math.floor(Math.random() * remaining.length)];
+
+    // 广播「已选瓶」事件，前端播放喝酒动画
+    io.to(roomId).emit('card:bottlePicked', {
       loserId,
       loserName: loserPlayer.name,
-      remainingBottles: [...loserPlayer.bottles.remaining],
+      bottleIndex,
     });
 
-    // 如果输家是 AI，延迟自动选酒
-    if (loserPlayer.isAI) {
-      scheduleAIPickBottle(roomId, loserId, 1800);
-    }
+    // 设置 drinking lock
+    const drinkingLock = `drinking:${loserId}`;
+    room.pickingPlayerId = drinkingLock;
+
+    // 动画结束后结算中毒判定（2.2秒后）
+    setTimeout(() => {
+      const latestRoom = rm.getRoom(roomId);
+      if (!latestRoom || latestRoom.phase !== 'punishment') return;
+      if (latestRoom.pickingPlayerId !== drinkingLock) return;
+      const latestEngine = rm.getEngine(roomId) as CardGame;
+      if (!latestEngine) return;
+
+      const punishment = latestEngine.pickBottle(loserId, bottleIndex);
+      if ('error' in punishment) {
+        console.warn(`[选酒失败] ${punishment.error}`);
+        return;
+      }
+
+      // 广播结果给所有人（含旁观者）
+      io.to(roomId).emit('card:bottleResult', punishment);
+      io.to(roomId).emit('game:stateUpdate', rm.toPublicView(latestRoom));
+
+      console.log(`[饮酒] ${loserPlayer.name} 第${bottleIndex+1}瓶，中毒=${punishment.poisoned}，剩余命=${punishment.livesRemaining}`);
+
+      const postRoom = rm.getRoom(roomId);
+      if (!postRoom) return;
+      if (postRoom.phase === 'gameOver') {
+        io.to(roomId).emit('game:over', { winner: postRoom.winner ?? '', room: rm.toPublicView(postRoom) });
+        return;
+      }
+      // 3秒后自动开始下一回合
+      setTimeout(() => startNextRound(roomId), 3000);
+    }, 2200);
     return;
   }
 
@@ -236,54 +270,6 @@ function startNextRound(roomId: string): void {
   if (firstPlayer?.isAI) scheduleAIAction(roomId, 1000);
 }
 
-// ── AI 选酒调度 ───────────────────────────────────────────
-function scheduleAIPickBottle(roomId: string, playerId: string, delayMs = 1800): void {
-  setTimeout(() => {
-    const room = rm.getRoom(roomId);
-    if (!room || room.phase !== 'punishment') return;
-    if (room.pickingPlayerId !== playerId) return;
-    const engine = rm.getEngine(roomId);
-    if (!engine) return;
-    const cardEngine = engine as CardGame;
-    const bottleIndex = cardEngine.aiPickBottle(playerId);
-    if (bottleIndex === null) return;
-
-    // 先广播“已选瓶”，让前端先播喝酒动画
-    const drinkingLock = `drinking:${playerId}`;
-    room.pickingPlayerId = drinkingLock;
-
-    io.to(roomId).emit('card:bottlePicked', {
-      loserId: playerId,
-      loserName: room.players.find(p => p.id === playerId)?.name ?? '',
-      bottleIndex,
-    });
-
-    // 动画后再结算是否中毒
-    setTimeout(() => {
-      const latestRoom = rm.getRoom(roomId);
-      if (!latestRoom || latestRoom.phase !== 'punishment') return;
-      if (latestRoom.pickingPlayerId !== drinkingLock) return;
-      const latestEngine = rm.getEngine(roomId);
-      if (!latestEngine) return;
-      const latestCardEngine = latestEngine as CardGame;
-      const punishment = latestCardEngine.pickBottle(playerId, bottleIndex);
-      if ('error' in punishment) {
-        console.warn(`[AI选酒失败] ${punishment.error}`);
-        return;
-      }
-      io.to(roomId).emit('card:bottleResult', punishment);
-      io.to(roomId).emit('game:stateUpdate', rm.toPublicView(latestRoom));
-
-      const postRoom = rm.getRoom(roomId);
-      if (!postRoom) return;
-      if (postRoom.phase === 'gameOver') {
-        io.to(roomId).emit('game:over', { winner: postRoom.winner ?? '', room: rm.toPublicView(postRoom) });
-        return;
-      }
-      setTimeout(() => startNextRound(roomId), 3000);
-    }, 2200);
-  }, delayMs);
-}
 
 // ── Socket.io 主连接处理 ──────────────────────────────────
 io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>) => {

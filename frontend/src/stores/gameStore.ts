@@ -159,6 +159,10 @@ export const useGameStore = defineStore('game', () => {
   const gameMode    = ref<GameMode>('card');
   const isSpectator = ref(false);
 
+  // 台面牌堆：记录每次出牌后桌上的牌背堆（按出牌顺序）
+  interface TableStack { playerId: string; playerName: string; count: number; }
+  const tableCardStacks = ref<TableStack[]>([]);
+
   // v2.0 角色 & 开场名言
   const selectedCharacter    = ref<HistoricalCharacter | null>(null);
   const openingQuotes        = ref<OpeningQuoteItem[]>([]);
@@ -207,6 +211,19 @@ export const useGameStore = defineStore('game', () => {
       const prevDiceBid = room.value?.currentDiceBid;
       const prevCardBid = room.value?.currentCardBid;
       room.value = r;
+      // 牌模式：出牌后追加到台面牌堆（跳过自己，因为 cardPlay 已乐观更新）
+      if (r.mode === 'card' && r.currentCardBid) {
+        const bid = r.currentCardBid;
+        const isNew = !prevCardBid || prevCardBid.playerId !== bid.playerId ||
+          prevCardBid.quantity !== bid.quantity;
+        if (isNew && bid.playerId !== myId.value) {
+          tableCardStacks.value.push({
+            playerId: bid.playerId,
+            playerName: bid.playerName,
+            count: bid.quantity,
+          });
+        }
+      }
       if (r.currentDiceBid && r.currentDiceBid.playerId !== myId.value) {
         const b = r.currentDiceBid;
         if (!prevDiceBid || prevDiceBid.playerId !== b.playerId || prevDiceBid.quantity !== b.quantity || prevDiceBid.face !== b.face)
@@ -251,7 +268,7 @@ export const useGameStore = defineStore('game', () => {
       else
         addLog(`${punishment.loserName} 平安无事，剩余酒瓶 ${punishment.remainingCount}`);
     });
-    s.on('game:start', (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardSuit[] }) => {
+    s.on('game:start', (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardValue[] }) => {
       room.value = data.room;
       myDice.value = data.yourDice;
       myHand.value = data.yourHand;
@@ -260,6 +277,7 @@ export const useGameStore = defineStore('game', () => {
       bottlePickPrompt.value = null;
       pendingBottlePick.value = null;
       winnerBanner.value = false;
+      tableCardStacks.value = []; // 新游戏清空台面牌堆
       diceRolling.value = true;
       setTimeout(() => { diceRolling.value = false; }, 700);
       addLog(`第 ${data.room.round} 回合开始！`);
@@ -365,6 +383,7 @@ export const useGameStore = defineStore('game', () => {
     bottlePickPrompt.value = null;
     pendingBottlePick.value = null;
     pendingRoundStart.value = null;
+    tableCardStacks.value = []; // 新回合清空台面牌堆
     diceRolling.value = true;
     setTimeout(() => { diceRolling.value = false; }, 700);
     addLog(`第 ${data.room.round} 回合开始`);
@@ -380,6 +399,19 @@ export const useGameStore = defineStore('game', () => {
   }
   function cardPlay(cards: CardValue[], claimQuantity: number) {
     socket.value?.emit('player:cardPlay', { cards, claimQuantity });
+    // 立即在台面显示本人的牌背（乐观更新，服务端 stateUpdate 会去重）
+    tableCardStacks.value.push({
+      playerId: myId.value,
+      playerName: myName.value,
+      count: claimQuantity,
+    });
+    // 立即从手牌中移除已打出的牌（乐观更新）
+    const handCopy = [...myHand.value];
+    for (const c of cards) {
+      const idx = handCopy.indexOf(c);
+      if (idx !== -1) handCopy.splice(idx, 1);
+    }
+    myHand.value = handCopy;
     addLog(`你出牌：声称 ${claimQuantity} 张目标牌（实出 ${cards.join('/')}）`);
     replay.push('cardPlay', { cards, claimQuantity });
   }
@@ -434,6 +466,7 @@ export const useGameStore = defineStore('game', () => {
     chatMessages.value = []; gameLog.value = [];
     winnerBanner.value = false; isSpectator.value = false;
     pendingRoundStart.value = null;
+    tableCardStacks.value = [];
     openingQuotes.value = []; showingOpeningQuotes.value = false; selectedCharacter.value = null;
     // 清除本地 session
     localStorage.removeItem('chuiniu_session');
@@ -463,6 +496,7 @@ export const useGameStore = defineStore('game', () => {
     chatMessages, gameLog, diceRolling, winnerBanner,
     phase, isMyTurn, me, currentPlayer, isSpectator,
     selectedCharacter, openingQuotes, showingOpeningQuotes, currentQuoteIndex,
+    tableCardStacks,
     selectCharacter, nextOpeningQuote, skipOpeningQuotes,
     connect, spectate, ready,
     diceBid, diceChallenge, cardPlay, cardChallenge, pickBottle,

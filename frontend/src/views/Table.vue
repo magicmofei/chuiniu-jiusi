@@ -57,19 +57,14 @@
         </div>
 
         <DiceCup v-if="store.gameMode==='dice'" :dice="store.myDice" :rolling="store.diceRolling" />
+        <TableArea v-if="store.gameMode==='card' && store.tableCardStacks.length > 0" :stacks="store.tableCardStacks" />
         <CardHand v-if="store.gameMode==='card'" :hand="store.myHand" :target-card="store.room?.targetCard??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" @play="onCardPlay" />
         <CallPanel v-if="store.phase==='bidding' && !store.isSpectator" :mode="store.gameMode" :is-my-turn="store.isMyTurn" :current-player-name="store.currentPlayer?.name??''" :current-bid="store.room?.currentDiceBid??store.room?.currentCardBid??null" :target-card="store.room?.targetCard??null" :my-dice="store.myDice" @dice-bid="onDiceBid" @challenge="onChallenge" />
         <div v-if="store.phase==='bidding' && store.isSpectator" class="card-ink p-3 text-center text-xs opacity-40 tracking-widest">观战中 · 等待玩家操作…</div>
 
-        <div v-if="showMyBottlePicker" class="card-ink p-5 text-center">
-          <p class="text-sm tracking-widest opacity-70 mb-1">从你面前 {{ store.bottlePickPrompt!.remainingBottles.length }} 瓶中选一瓶喝下</p>
-          <p class="text-xs opacity-30 mb-4">外观看起来都一样，喝下后才知道是不是蒙汗药</p>
-          <BottleRow :remaining="store.bottlePickPrompt!.remainingBottles" :can-pick="true" @pick="onPickBottle" />
-        </div>
-
-        <div v-else-if="store.phase==='punishment' && store.pendingBottlePick" class="card-ink p-4 text-center">
-          <p class="text-sm opacity-70">{{ store.pendingBottlePick.loserName }} 正在喝第 {{ store.pendingBottlePick.bottleIndex + 1 }} 瓶…</p>
-          <p class="text-xs opacity-40 mt-1">🍶 喝酒动画播放中… <span class="opacity-30">(Spine: drink)</span></p>
+        <div v-if="store.phase==='punishment' && store.pendingBottlePick" class="card-ink p-4 text-center">
+          <p class="text-sm opacity-70">🍶 {{ store.pendingBottlePick.loserName }} 正在喝第 {{ store.pendingBottlePick.bottleIndex + 1 }} 瓶…</p>
+          <p class="text-xs opacity-40 mt-1 animate-pulse">等待结果揭晓…</p>
         </div>
 
         <div v-if="store.phase==='result'" class="card-ink p-4 text-center"><p class="text-sm opacity-50 tracking-widest">⏳ 3秒后自动开始下一回合...</p></div>
@@ -113,6 +108,7 @@ import GameLog from '../components/GameLog.vue';
 import WinnerOverlay from '../components/WinnerOverlay.vue';
 import BottleRow from '../components/BottleRow.vue';
 import OpeningQuoteOverlay from '../components/OpeningQuoteOverlay.vue';
+import TableArea from '../components/TableArea.vue';
 import { sound } from '../utils/useSound';
 import { replay } from '../utils/ReplayRecorder';
 import { inkSplash } from '../utils/useConfetti';
@@ -137,15 +133,7 @@ watch(() => store.room?.currentCardBid, (v, old) => {
 
 const emptySeats = computed(() => Math.max(0, 4 - (store.room?.players.length ?? 0)));
 
-// 我的选酒面板：只在 punishment 阶段、bottlePickPrompt 指向我时显示
-const showMyBottlePicker = computed(() => {
-  if (store.gameMode !== 'card') return false;
-  if (store.phase !== 'punishment') return false;
-  if (!store.bottlePickPrompt) return false;
-  return store.bottlePickPrompt.loserId === store.myId;
-});
-
-// 获取某玩家的剩余酒坛列表
+function onDiceBid(qty: number, face: DiceFace) { store.diceBid(qty, face); }
 function getBottleRemaining(playerId: string): number[] {
   const count = store.room?.bottleRemaining?.[playerId] ?? 0;
   // 用 0..count-1 作为索引展示（真实索引仅输家选酒时知道）
