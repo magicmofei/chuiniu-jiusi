@@ -5,18 +5,11 @@
     <!-- 渐变遮罩：让背景与UI融合 -->
     <div class="lobby-overlay" aria-hidden="true"></div>
 
-    <!-- 云雾层 1：慢速宽云 -->
-    <div class="cloud-layer" aria-hidden="true">
-      <div class="cloud cloud-a"></div>
-      <div class="cloud cloud-b"></div>
-      <div class="cloud cloud-c"></div>
-    </div>
-    <!-- 云雾层 2：轻烟飘动 -->
+    <!-- 云雾层：简单CSS动画，低资源消耗 -->
     <div class="mist-layer" aria-hidden="true">
       <div class="mist mist-1"></div>
       <div class="mist mist-2"></div>
       <div class="mist mist-3"></div>
-      <div class="mist mist-4"></div>
     </div>
 
     <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
@@ -335,8 +328,7 @@ watch(() => store.phase, (p) => {
     );
 }
 
-/* ── 云雾层 ──────────────────────────────────────────── */
-.cloud-layer,
+/* ── 云雾层（简化版，低资源消耗） ──────────────────── */
 .mist-layer {
   position: absolute;
   inset: 0;
@@ -345,100 +337,59 @@ watch(() => store.phase, (p) => {
   overflow: hidden;
 }
 
-/* 宽幅云团 */
-.cloud {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(48px);
-  opacity: 0;
-  animation: cloudDrift linear infinite;
-}
-.cloud-a {
-  width: 70vw; height: 18vh;
-  background: radial-gradient(ellipse at 50% 50%,
-    rgba(245,240,232,0.13) 0%, transparent 70%);
-  top: 55%;
-  left: -30vw;
-  animation-duration: 38s;
-  animation-delay: 0s;
-}
-.cloud-b {
-  width: 55vw; height: 14vh;
-  background: radial-gradient(ellipse at 50% 50%,
-    rgba(212,168,67,0.07) 0%, rgba(245,240,232,0.09) 40%, transparent 70%);
-  top: 68%;
-  left: -20vw;
-  animation-duration: 52s;
-  animation-delay: -18s;
-}
-.cloud-c {
-  width: 80vw; height: 22vh;
-  background: radial-gradient(ellipse at 50% 50%,
-    rgba(245,240,232,0.08) 0%, transparent 65%);
-  top: 45%;
-  left: -40vw;
-  animation-duration: 65s;
-  animation-delay: -32s;
-}
-
-@keyframes cloudDrift {
-  0%   { opacity: 0;    transform: translateX(0)    translateY(0); }
-  8%   { opacity: 1; }
-  90%  { opacity: 0.7; }
-  100% { opacity: 0;    transform: translateX(140vw) translateY(-3vh); }
-}
-
-/* 细烟丝 */
+/* 三条横向云雾带，固定定位 + opacity呼吸动画，无blur滤镜 */
 .mist {
   position: absolute;
+  left: -10%;
+  width: 120%;
   border-radius: 50%;
-  filter: blur(28px);
-  animation: mistFloat ease-in-out infinite;
-  opacity: 0;
+  will-change: opacity, transform;
 }
+
 .mist-1 {
-  width: 40vw; height: 8vh;
-  background: radial-gradient(ellipse at 50% 50%,
-    rgba(245,240,232,0.10) 0%, transparent 70%);
-  bottom: 28%;
-  left: 5%;
-  animation-duration: 22s;
+  height: 80px;
+  bottom: 35%;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(245,240,232,0.08) 20%,
+    rgba(245,240,232,0.14) 50%,
+    rgba(245,240,232,0.08) 80%,
+    transparent 100%
+  );
+  animation: mistBreath 8s ease-in-out infinite;
   animation-delay: 0s;
 }
 .mist-2 {
-  width: 30vw; height: 6vh;
-  background: radial-gradient(ellipse at 50% 50%,
-    rgba(212,168,67,0.06) 0%, rgba(245,240,232,0.07) 50%, transparent 70%);
-  bottom: 38%;
-  left: 50%;
-  animation-duration: 28s;
-  animation-delay: -8s;
+  height: 60px;
+  bottom: 55%;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(212,168,67,0.05) 15%,
+    rgba(245,240,232,0.10) 45%,
+    rgba(245,240,232,0.07) 75%,
+    transparent 100%
+  );
+  animation: mistBreath 11s ease-in-out infinite;
+  animation-delay: -4s;
 }
 .mist-3 {
-  width: 50vw; height: 10vh;
-  background: radial-gradient(ellipse at 50% 50%,
-    rgba(245,240,232,0.07) 0%, transparent 65%);
+  height: 100px;
   bottom: 20%;
-  left: 20%;
-  animation-duration: 35s;
-  animation-delay: -14s;
-}
-.mist-4 {
-  width: 35vw; height: 7vh;
-  background: radial-gradient(ellipse at 50% 50%,
-    rgba(78,139,111,0.05) 0%, rgba(245,240,232,0.06) 40%, transparent 70%);
-  bottom: 32%;
-  left: -5%;
-  animation-duration: 18s;
-  animation-delay: -5s;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(245,240,232,0.06) 25%,
+    rgba(245,240,232,0.11) 55%,
+    rgba(245,240,232,0.05) 80%,
+    transparent 100%
+  );
+  animation: mistBreath 14s ease-in-out infinite;
+  animation-delay: -7s;
 }
 
-@keyframes mistFloat {
-  0%   { opacity: 0;    transform: translateX(0)   translateY(0)     scaleX(1); }
-  15%  { opacity: 0.9; }
-  50%  { opacity: 0.6; transform: translateX(12vw) translateY(-2vh)  scaleX(1.1); }
-  85%  { opacity: 0.3; }
-  100% { opacity: 0;    transform: translateX(25vw) translateY(-4vh)  scaleX(1.2); }
+@keyframes mistBreath {
+  0%   { opacity: 0.3; transform: translateX(-3%) translateY(0); }
+  50%  { opacity: 1;   transform: translateX(3%)  translateY(-6px); }
+  100% { opacity: 0.3; transform: translateX(-3%) translateY(0); }
 }
 
 /* 确保内容在云雾层之上 */
