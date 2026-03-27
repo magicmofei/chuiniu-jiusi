@@ -35,9 +35,15 @@ function createBottleState(): BottleState {
   };
 }
 
-// 创建 AI 玩家
-function createAIPlayer(index: number): Player {
-  const charId = AI_CHARACTER_IDS[index % AI_CHARACTER_IDS.length];
+// 创建 AI 玩家，excludeCharIds 为场上已有人物的 id 集合，避免重复
+function createAIPlayer(index: number, excludeCharIds: Set<string> = new Set()): Player {
+  // 优先从 AI_CHARACTER_IDS 中选未被占用的，若全被占用则从全量 CHARACTERS 里选
+  const candidates = [...AI_CHARACTER_IDS, ...CHARACTERS.map(c => c.id)]
+    .filter((id, pos, arr) => arr.indexOf(id) === pos) // 去重
+    .filter(id => !excludeCharIds.has(id));
+  const charId = candidates.length > 0
+    ? candidates[index % candidates.length]
+    : AI_CHARACTER_IDS[index % AI_CHARACTER_IDS.length]; // fallback（极少情况）
   const char = findCharacter(charId);
   return {
     id: `AI_${index}_${Date.now()}`,
@@ -273,7 +279,8 @@ export class RoomManager {
     if (room.players.length >= MAX_PLAYERS) return { success: false, error: '房间已满' };
 
     const existingAiCount = room.players.filter(p => p.isAI).length;
-    const ai = createAIPlayer(existingAiCount);
+    const usedCharIds = new Set(room.players.map(p => p.characterId));
+    const ai = createAIPlayer(existingAiCount, usedCharIds);
     room.players.push(ai);
     return { success: true, roomId };
   }
@@ -495,7 +502,8 @@ export class RoomManager {
   private fillWithAI(room: Room): void {
     let aiIndex = 0;
     while (room.players.length < MAX_PLAYERS) {
-      const ai = createAIPlayer(aiIndex++);
+      const usedCharIds = new Set(room.players.map(p => p.characterId));
+      const ai = createAIPlayer(aiIndex++, usedCharIds);
       room.players.push(ai);
     }
   }
@@ -507,7 +515,11 @@ export class RoomManager {
     const idx = room.players.findIndex(p => p.id === socketId);
     if (idx === -1) return;
     const oldPlayer = room.players[idx];
-    const ai = createAIPlayer(idx);
+    // 排除其他玩家已使用的角色（不含自己，自己的位置要被替换）
+    const usedCharIds = new Set(
+      room.players.filter((_, i) => i !== idx).map(p => p.characterId)
+    );
+    const ai = createAIPlayer(idx, usedCharIds);
     // 保留该玩家的游戏数据（骰子/手牌/生命）
     ai.lives = oldPlayer.lives;
     ai.diceCount = oldPlayer.diceCount;

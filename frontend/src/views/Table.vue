@@ -351,23 +351,30 @@ const soundEnabled  = ref(localStorage.getItem('chuiniu_sound') !== 'off');
 const showDealing   = ref(false);
 
 // ── 游戏内 BGM（喻晓庆 - 人在草木间）──────────────────────────
-// 进入游戏局内立即播放，音量50%，仅播放一遍
-const gameBgm = new Audio('/audio/game-bgm.mp3');
-gameBgm.loop   = false;
-gameBgm.volume = 0.5;
+// 懒加载：首次需要时才创建 Audio 对象（规避浏览器 autoplay 策略）
+let gameBgm: HTMLAudioElement | null = null;
 let gameBgmStarted = false;
+
+function getGameBgm(): HTMLAudioElement {
+  if (!gameBgm) {
+    gameBgm = new Audio('/audio/game-bgm.mp3');
+    gameBgm.loop   = false;
+    gameBgm.volume = 0.5;
+  }
+  return gameBgm;
+}
 
 function startGameBgm() {
   if (gameBgmStarted) return;
   gameBgmStarted = true;
   if (soundEnabled.value) {
-    gameBgm.play().catch(() => {});
+    getGameBgm().play().catch(() => {});
   }
 }
 
 function stopGameBgm() {
-  gameBgm.pause();
-  gameBgm.currentTime = 0;
+  gameBgm?.pause();
+  if (gameBgm) gameBgm.currentTime = 0;
   gameBgmStarted = false;
 }
 
@@ -385,9 +392,9 @@ watch(soundEnabled, v => {
   localStorage.setItem('chuiniu_sound', v ? 'on' : 'off');
   // 静音时暂停游戏BGM，开启时若BGM已启动则恢复播放
   if (!v) {
-    gameBgm.pause();
-  } else if (gameBgmStarted && gameBgm.paused) {
-    gameBgm.play().catch(() => {});
+    gameBgm?.pause();
+  } else if (gameBgmStarted && gameBgm?.paused) {
+    getGameBgm().play().catch(() => {});
   }
 });
 
@@ -500,6 +507,15 @@ function confirmLeave() {
 function downloadReplay() { replay.download(); }
 
 onMounted(() => {
+  // 若进入页面时游戏已在进行中（重连场景），等首次用户交互后立即播放 BGM
+  const tryStartBgmOnInteraction = () => {
+    if (store.room?.round && store.room.round >= 1 && store.phase !== 'gameOver') {
+      startGameBgm();
+    }
+  };
+  window.addEventListener('pointerdown', tryStartBgmOnInteraction, { once: true });
+  window.addEventListener('keydown', tryStartBgmOnInteraction, { once: true });
+
   if (store.roomId) return;
   const raw = localStorage.getItem('chuiniu_session');
   if (!raw) { router.push('/'); return; }
