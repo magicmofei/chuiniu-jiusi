@@ -133,7 +133,6 @@ watch(() => store.room?.currentCardBid, (v, old) => {
 
 const emptySeats = computed(() => Math.max(0, 4 - (store.room?.players.length ?? 0)));
 
-function onDiceBid(qty: number, face: DiceFace) { store.diceBid(qty, face); }
 function getBottleRemaining(playerId: string): number[] {
   const count = store.room?.bottleRemaining?.[playerId] ?? 0;
   // 用 0..count-1 作为索引展示（真实索引仅输家选酒时知道）

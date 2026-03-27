@@ -1,16 +1,35 @@
 <template>
   <div class="min-h-screen flex flex-col items-center justify-center px-4 py-10 relative overflow-hidden">
-    <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
-      <span class="absolute top-8 left-8 text-8xl opacity-[0.04] rotate-12">竹</span>
-      <span class="absolute bottom-10 right-10 text-9xl opacity-[0.04] -rotate-12">酒</span>
+    <!-- 环境背景图 -->
+    <div class="lobby-cover-bg" aria-hidden="true"></div>
+    <!-- 渐变遮罩：让背景与UI融合 -->
+    <div class="lobby-overlay" aria-hidden="true"></div>
+
+    <!-- 云雾层 1：慢速宽云 -->
+    <div class="cloud-layer" aria-hidden="true">
+      <div class="cloud cloud-a"></div>
+      <div class="cloud cloud-b"></div>
+      <div class="cloud cloud-c"></div>
     </div>
-    <div class="text-center mb-8 fade-in-up">
+    <!-- 云雾层 2：轻烟飘动 -->
+    <div class="mist-layer" aria-hidden="true">
+      <div class="mist mist-1"></div>
+      <div class="mist mist-2"></div>
+      <div class="mist mist-3"></div>
+      <div class="mist mist-4"></div>
+    </div>
+
+    <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
+      <span class="absolute top-8 left-8 text-8xl opacity-[0.03] rotate-12">竹</span>
+      <span class="absolute bottom-10 right-10 text-9xl opacity-[0.03] -rotate-12">酒</span>
+    </div>
+    <div class="text-center mb-8 fade-in-up" style="position:relative;z-index:10;">
       <div class="candle-flicker text-6xl mb-2 inline-block">🕯️</div>
       <h1 class="text-5xl font-bold tracking-[0.25em]" style="color:var(--gold);text-shadow:0 0 40px rgba(212,168,67,0.6)">吹牛酒肆</h1>
       <p class="mt-2 text-xs tracking-[0.3em] opacity-50">汴京酒楼版 · 宋代历史人物</p>
     </div>
     <transition name="fade" mode="out-in">
-      <div v-if="!store.roomId" key="form" class="card-ink p-7 w-full max-w-sm">
+      <div v-if="!store.roomId" key="form" class="card-ink p-7 w-full max-w-sm" style="position:relative;z-index:10;">
         <button class="w-full mb-4 p-3 rounded-xl border border-yellow-600/40 bg-yellow-900/15 hover:border-yellow-500/60 flex items-center gap-3 transition-all"
           @click="showCharPanel = true"
         >
@@ -48,7 +67,7 @@
         <button @click="joinGame" :disabled="!name.trim()||joining" class="btn-gold w-full">{{ joining?'入座中...':'踏入酒肆' }}</button>
         <button @click="showRoomList=true" class="w-full mt-2 py-2 rounded-lg border text-xs font-semibold tracking-wider transition-all" style="border-color:rgba(255,255,255,0.1);color:rgba(255,255,255,0.35)" >🏮 浏览所有酒肆</button>
       </div>
-      <div v-else key="lobby" class="card-ink p-7 w-full max-w-md">
+      <div v-else key="lobby" class="card-ink p-7 w-full max-w-md" style="position:relative;z-index:10;">
         <div class="flex items-center justify-between mb-5">
           <h2 class="font-semibold tracking-widest" style="color:var(--gold)">等待豪客入座</h2>
           <div class="flex items-center gap-2">
@@ -95,7 +114,7 @@
         </div>
       </div>
     </transition>
-    <p class="mt-8 text-xs opacity-10 tracking-widest">宋·汴京酒楼 · 四人联机 · v2.0</p>
+    <p class="mt-8 text-xs opacity-10 tracking-widest" style="position:relative;z-index:10;">宋·汴京酒楼 · 四人联机 · v2.0</p>
     <CharacterSelectPanel v-if="showCharPanel" :initial-id="store.selectedCharacter?.id" @select="onCharSelect" @close="showCharPanel=false" />
 
     <!-- 房间列表弹窗 -->
@@ -277,4 +296,147 @@ watch(() => store.phase, (p) => {
 .fade-enter-active, .fade-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .fade-enter-from { opacity:0; transform: translateY(8px); }
 .fade-leave-to   { opacity:0; transform: translateY(-8px); }
+
+/* ── 封面背景图 ──────────────────────────────────────── */
+.lobby-cover-bg {
+  position: absolute;
+  inset: 0;
+  background-image: url('/cover-bg.png');
+  background-size: cover;
+  background-position: center 30%;
+  background-repeat: no-repeat;
+  /* 轻微暗化，保留氛围色 */
+  filter: brightness(0.55) saturate(1.1);
+  transform: scale(1.04);
+  z-index: 0;
+}
+
+.lobby-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    /* 顶部：淡化融入标题区 */
+    linear-gradient(to bottom,
+      rgba(10,8,4,0.55) 0%,
+      rgba(10,8,4,0.15) 30%,
+      rgba(10,8,4,0.05) 55%,
+      rgba(10,8,4,0.25) 75%,
+      rgba(10,8,4,0.75) 100%
+    ),
+    /* 两侧收边 */
+    radial-gradient(ellipse 120% 100% at 50% 50%,
+      transparent 40%,
+      rgba(10,8,4,0.6) 100%
+    );
+}
+
+/* ── 云雾层 ──────────────────────────────────────────── */
+.cloud-layer,
+.mist-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* 宽幅云团 */
+.cloud {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+  opacity: 0;
+  animation: cloudDrift linear infinite;
+}
+.cloud-a {
+  width: 70vw; height: 18vh;
+  background: radial-gradient(ellipse at 50% 50%,
+    rgba(245,240,232,0.13) 0%, transparent 70%);
+  top: 55%;
+  left: -30vw;
+  animation-duration: 38s;
+  animation-delay: 0s;
+}
+.cloud-b {
+  width: 55vw; height: 14vh;
+  background: radial-gradient(ellipse at 50% 50%,
+    rgba(212,168,67,0.07) 0%, rgba(245,240,232,0.09) 40%, transparent 70%);
+  top: 68%;
+  left: -20vw;
+  animation-duration: 52s;
+  animation-delay: -18s;
+}
+.cloud-c {
+  width: 80vw; height: 22vh;
+  background: radial-gradient(ellipse at 50% 50%,
+    rgba(245,240,232,0.08) 0%, transparent 65%);
+  top: 45%;
+  left: -40vw;
+  animation-duration: 65s;
+  animation-delay: -32s;
+}
+
+@keyframes cloudDrift {
+  0%   { opacity: 0;    transform: translateX(0)    translateY(0); }
+  8%   { opacity: 1; }
+  90%  { opacity: 0.7; }
+  100% { opacity: 0;    transform: translateX(140vw) translateY(-3vh); }
+}
+
+/* 细烟丝 */
+.mist {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(28px);
+  animation: mistFloat ease-in-out infinite;
+  opacity: 0;
+}
+.mist-1 {
+  width: 40vw; height: 8vh;
+  background: radial-gradient(ellipse at 50% 50%,
+    rgba(245,240,232,0.10) 0%, transparent 70%);
+  bottom: 28%;
+  left: 5%;
+  animation-duration: 22s;
+  animation-delay: 0s;
+}
+.mist-2 {
+  width: 30vw; height: 6vh;
+  background: radial-gradient(ellipse at 50% 50%,
+    rgba(212,168,67,0.06) 0%, rgba(245,240,232,0.07) 50%, transparent 70%);
+  bottom: 38%;
+  left: 50%;
+  animation-duration: 28s;
+  animation-delay: -8s;
+}
+.mist-3 {
+  width: 50vw; height: 10vh;
+  background: radial-gradient(ellipse at 50% 50%,
+    rgba(245,240,232,0.07) 0%, transparent 65%);
+  bottom: 20%;
+  left: 20%;
+  animation-duration: 35s;
+  animation-delay: -14s;
+}
+.mist-4 {
+  width: 35vw; height: 7vh;
+  background: radial-gradient(ellipse at 50% 50%,
+    rgba(78,139,111,0.05) 0%, rgba(245,240,232,0.06) 40%, transparent 70%);
+  bottom: 32%;
+  left: -5%;
+  animation-duration: 18s;
+  animation-delay: -5s;
+}
+
+@keyframes mistFloat {
+  0%   { opacity: 0;    transform: translateX(0)   translateY(0)     scaleX(1); }
+  15%  { opacity: 0.9; }
+  50%  { opacity: 0.6; transform: translateX(12vw) translateY(-2vh)  scaleX(1.1); }
+  85%  { opacity: 0.3; }
+  100% { opacity: 0;    transform: translateX(25vw) translateY(-4vh)  scaleX(1.2); }
+}
+
+/* 确保内容在云雾层之上 */
+.relative { position: relative; }
 </style>

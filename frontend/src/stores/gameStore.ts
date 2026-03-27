@@ -342,14 +342,21 @@ export const useGameStore = defineStore('game', () => {
     const s = connectSocket(); socket.value = s;
     // 先清理旧监听器，再注册 connect，顺序不能颠倒
     _registerCommonEvents(s);
-    s.on('connect', () => {
+
+    const doSpectate = () => {
       connected.value = true; myId.value = s.id ?? '';
       s.emit('room:spectate', { name, avatar, roomId: targetRoomId }, (res: any) => {
         if (res.success) { roomId.value = res.roomId; addLog(`已进入观战 ${res.roomId}`); }
         else { errorMsg.value = res.error ?? '观战失败'; }
       });
-    });
-    if (!s.connected) s.connect();
+    };
+
+    if (s.connected) {
+      doSpectate();
+    } else {
+      s.on('connect', doSpectate);
+      s.connect();
+    }
   }
 
   function connect(name: string, avatar: string, mode: GameMode = 'card', targetRoomId?: string, characterId?: string) {
@@ -357,7 +364,8 @@ export const useGameStore = defineStore('game', () => {
     const s = connectSocket(); socket.value = s;
     // 先清理旧监听器，再注册 connect，顺序不能颠倒
     _registerCommonEvents(s);
-    s.on('connect', () => {
+
+    const doJoin = () => {
       connected.value = true; myId.value = s.id ?? '';
       s.emit('room:join', { name, avatar, mode, roomId: targetRoomId, characterId }, (res: any) => {
         if (res.success) {
@@ -373,8 +381,15 @@ export const useGameStore = defineStore('game', () => {
         }
         else { errorMsg.value = res.error ?? '加入失败'; }
       });
-    });
-    if (!s.connected) s.connect();
+    };
+
+    if (s.connected) {
+      // 已连接则直接 join，不等 connect 事件
+      doJoin();
+    } else {
+      s.on('connect', doJoin);
+      s.connect();
+    }
   }
 
   function _applyRoundStart(data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardValue[] }) {

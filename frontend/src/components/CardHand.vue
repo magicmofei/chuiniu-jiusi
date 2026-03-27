@@ -40,7 +40,6 @@
     <p v-if="!hasSelected && !disabled && hand.length > 0" class="text-xs opacity-20 mt-2">
       点击选牌（1-{{ Math.min(5, hand.length) }} 张），选完后点「出牌！」
     </p>
-    </p>
   </div>
 </template>
 
