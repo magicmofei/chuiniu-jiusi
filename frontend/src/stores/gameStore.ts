@@ -210,7 +210,13 @@ export const useGameStore = defineStore('game', () => {
       if (showPunishment.value && r.phase !== 'gameOver') return;
       const prevDiceBid = room.value?.currentDiceBid;
       const prevCardBid = room.value?.currentCardBid;
+      const prevPhase   = room.value?.phase;
       room.value = r;
+      // 等待操作时在日志中明确流程
+      if (r.phase === 'bidding' && prevPhase !== 'bidding') {
+        const cur = r.players[r.currentPlayerIndex];
+        if (cur) addLog(`等待 ${cur.name} 出牌或质疑`);
+      }
       // 牌模式：出牌后追加到台面牌堆（跳过自己，因为 cardPlay 已乐观更新）
       if (r.mode === 'card' && r.currentCardBid) {
         const bid = r.currentCardBid;
@@ -244,7 +250,7 @@ export const useGameStore = defineStore('game', () => {
     });
     s.on('card:bottlePicked', (data: { loserId: string; loserName: string; bottleIndex: number }) => {
       pendingBottlePick.value = data;
-      addLog(`${data.loserName} 选中了 1 瓶，正在喝…`);
+      addLog(`${data.loserName} 举起第 ${data.bottleIndex + 1} 瓶，咕嘟咕嘟…`);
     });
     s.on('card:bottleResult', (punishment: BottlePunishment) => {
       pendingBottlePick.value = null;
@@ -329,6 +335,13 @@ export const useGameStore = defineStore('game', () => {
         _applyRoundStart(data);
       } else {
         addLog(`第 ${data.room.round} 回合准备中，等待结算弹窗关闭…`);
+        // 安全兜底：最多等待 12 秒，超时强制关闭弹窗推进回合
+        setTimeout(() => {
+          if (pendingRoundStart.value === data && showPunishment.value) {
+            addLog('弹窗超时，自动推进下一回合');
+            _applyRoundStart(data);
+          }
+        }, 12000);
       }
     });
     s.on('player:challenge', (result: ChallengeResult) => {
@@ -340,7 +353,8 @@ export const useGameStore = defineStore('game', () => {
       if (result.type === 'dice') {
         addLog(`${result.challengerName} 质疑 → ${result.bidSuccess?'叫牌成真':'吹牛败露'}，${result.loserNames[0]} 受罚`);
       } else {
-        addLog(`${result.challengerName} 质疑 → ${result.bidSuccess?'叫牌成真':'吹牛败露'}，${result.loserNames[0]} 需要喝酒`);
+        addLog(`${result.challengerName} 质疑 → ${result.bidSuccess?'叫牌成真':'吹牛败露'}`);
+        addLog(`等待 ${result.loserNames[0]} 喝酒验证…`);
       }
     });
     s.on('game:over', (data: { winner: string; room: RoomPublicView }) => {
@@ -529,6 +543,12 @@ export const useGameStore = defineStore('game', () => {
     // 若已有缓存的 roundStart，立即应用
     if (pendingRoundStart.value) {
       _applyRoundStart(pendingRoundStart.value);
+    } else {
+      // roundStart 还没到：清理弹窗状态，等它到来时自动应用
+      // 同时清掉 challengeResult，避免弹窗条件 v-if 残留导致重新显示
+      challengeResult.value = null;
+      bottlePickPrompt.value = null;
+      pendingBottlePick.value = null;
     }
     // 若 roundStart 还没到（网络慢等），等它来时会因 showPunishment=false 而自动应用
   }

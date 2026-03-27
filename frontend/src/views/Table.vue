@@ -56,7 +56,12 @@
         </div>
 
         <DiceCup v-if="store.gameMode==='dice'" :dice="store.myDice" :rolling="store.diceRolling" />
-        <TableArea v-if="store.gameMode==='card' && store.tableCardStacks.length > 0" :stacks="store.tableCardStacks" />
+        <TableArea
+          v-if="store.gameMode==='card' && (store.tableCardStacks.length > 0 || store.challengeResult?.type==='card')"
+          :stacks="store.tableCardStacks"
+          :target-card="store.room?.targetCard"
+          :challenge-result="store.challengeResult?.type==='card' ? store.challengeResult : null"
+        />
         <CardHand v-if="store.gameMode==='card'" :key="store.myHand.length" :hand="store.myHand" :target-card="store.room?.targetCard??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" @play="onCardPlay" />
         <CallPanel v-if="store.phase==='bidding' && !store.isSpectator" :mode="store.gameMode" :is-my-turn="store.isMyTurn" :current-player-name="store.currentPlayer?.name??''" :current-bid="store.room?.currentDiceBid??store.room?.currentCardBid??null" :target-card="store.room?.targetCard??null" :my-dice="store.myDice" @dice-bid="onDiceBid" @challenge="onChallenge" />
         <div v-if="store.phase==='bidding' && store.isSpectator" class="card-ink p-3 text-center text-xs opacity-40 tracking-widest">观战中 · 等待玩家操作…</div>
@@ -89,6 +94,7 @@
       :total-cards="5"
       @done="showDealing = false"
     />
+    <!-- 喝酒动画浮窗：pointer-events 仅在弹窗本体上，不阻挡台面交互 -->
     <PunishmentModal v-if="store.showPunishment && store.challengeResult" :result="store.challengeResult" @close="store.closePunishment()" />
     <transition name="toast">
       <div v-if="store.errorMsg" class="fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 rounded-xl z-50 flex items-center gap-3 safe-bottom" style="background:var(--vermillion);color:white">

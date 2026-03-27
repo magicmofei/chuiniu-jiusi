@@ -57,7 +57,7 @@ function cardCountFor(seatIndex: number): number {
   return dealtCount.value[seatIndex] ?? 0;
 }
 
-function fanCardStyle(seatIndex: number, cardIndex: number): Record<string, string> {
+function fanCardStyle(_seatIndex: number, cardIndex: number): Record<string, string> {
   const total = props.totalCards;
   const spread = Math.min(total - 1, 4) * 10; // 最大扇角度
   const angle = total <= 1 ? 0 : -spread / 2 + (spread / Math.max(total - 1, 1)) * cardIndex;
