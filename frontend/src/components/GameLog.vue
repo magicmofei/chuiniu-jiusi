@@ -34,12 +34,12 @@
     </div>
 
     <!-- 快捷表情 -->
-    <div class="unified-log__emojis">
+    <div v-if="!hideInput" class="unified-log__emojis">
       <button v-for="e in quickEmojis" :key="e" @click="sendEmoji(e)" class="emoji-btn">{{ e }}</button>
     </div>
 
     <!-- 输入框 -->
-    <div class="unified-log__input-row">
+    <div v-if="!hideInput" class="unified-log__input-row">
       <input
         v-model="input"
         @keyup.enter="send"
@@ -56,6 +56,8 @@
 import { ref, computed, watch, nextTick } from 'vue';
 import { useGameStore } from '../stores/gameStore';
 import { sound } from '../utils/useSound';
+
+const props = defineProps<{ hideInput?: boolean }>();
 
 const store = useGameStore();
 const input = ref('');

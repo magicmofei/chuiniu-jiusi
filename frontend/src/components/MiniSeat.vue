@@ -11,13 +11,13 @@
       </p>
       <!-- 统计栏：命数 · 酒瓶 · 手牌（公开信息，所有方向均显示）-->
       <div class="mini-seat__stats">
-        <span class="stat-item stat-lives">⚔<span class="stat-val">{{ player.lives }}</span></span>
+        <span class="stat-item stat-lives"><span class="stat-val">{{ player.lives }}命</span></span>
         <span class="stat-sep">·</span>
         <span class="stat-item stat-bottles" :class="{ 'stat-bottles--low': bottleCount !== undefined && bottleCount <= 2 }">
-          🍶<span class="stat-val">{{ bottleCount ?? '?' }}</span>
+          🍶<span class="stat-val">{{ bottleCount ?? '?' }}瓶</span>
         </span>
         <span v-if="player.handCount > 0" class="stat-sep">·</span>
-        <span v-if="player.handCount > 0" class="stat-item stat-hand">🃏<span class="stat-val">{{ player.handCount }}</span></span>
+        <span v-if="player.handCount > 0" class="stat-item stat-hand">🃏<span class="stat-val">{{ player.handCount }}张</span></span>
       </div>
       <!-- 手牌扇形（top/bottom 方向宽度足够时显示）-->
       <div v-if="player.handCount > 0 && orientation !== 'left' && orientation !== 'right'" class="hand-fan">

@@ -136,8 +136,24 @@
         <span class="log-arrow">{{ showLog ? '▼' : '▲' }}</span>
       </button>
       <transition name="log-expand">
-        <div v-if="showLog" class="log-expanded"><GameLog /></div>
+        <div v-if="showLog" class="log-expanded"><GameLog :hide-input="true" /></div>
       </transition>
+      <!-- 常驻聊天输入区 -->
+      <div class="log-persistent-input">
+        <div class="log-emoji-bar">
+          <button v-for="e in persistentEmojis" :key="e" @click="persistentSendEmoji(e)" class="log-emoji-btn">{{ e }}</button>
+        </div>
+        <div class="log-input-row">
+          <input
+            v-model="persistentInput"
+            @keyup.enter="persistentSend"
+            maxlength="60"
+            placeholder="说点什么…"
+            class="log-input"
+          />
+          <button @click="persistentSend" class="btn-gold log-send-btn">发</button>
+        </div>
+      </div>
     </section>
 
     <!-- ── 浮层 ── -->
@@ -181,21 +197,36 @@ import { inkSplash } from '../utils/useConfetti';
 const router = useRouter();
 const store  = useGameStore();
 const showLog       = ref(false);
+const persistentInput = ref('');
+const persistentEmojis = ['😂','🤣','😤','🤡','💀','🍶','👀','🫣','😱','🎉'];
+function persistentSend() {
+  if (!persistentInput.value.trim()) return;
+  store.sendChat(persistentInput.value.trim());
+  sound.chatSend();
+  persistentInput.value = '';
+}
+function persistentSendEmoji(e: string) { store.sendChat(e, 'emoji'); sound.chatSend(); }
 const soundEnabled  = ref(localStorage.getItem('chuiniu_sound') !== 'off');
 const showDealing   = ref(false);
 
-// ── 质疑提示（1秒后自动消失）──────────────────────────────
+// ── 质疑提示 ─────────────────────────────────────────────
 const challengeFlash = ref<string | null>(null);
 let challengeFlashTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showChallengeFlash(text: string, duration = 1400) {
+  if (challengeFlashTimer) clearTimeout(challengeFlashTimer);
+  challengeFlash.value = text;
+  challengeFlashTimer = setTimeout(() => { challengeFlash.value = null; }, duration);
+}
 
 watch(soundEnabled, v => localStorage.setItem('chuiniu_sound', v ? 'on' : 'off'));
 watch(() => store.challengeResult, (result) => {
   if (!result) return;
-  const challenger = result.challengerName;
-  const loser = result.loserNames?.[0] ?? '';
-  challengeFlash.value = `${challenger} 质疑了 ${loser}`;
-  if (challengeFlashTimer) clearTimeout(challengeFlashTimer);
-  challengeFlashTimer = setTimeout(() => { challengeFlash.value = null; }, 1200);
+  // 若出牌者牌为真（质疑方输），将横幅替换为「XX 质疑失败」
+  if (result.bidSuccess) {
+    showChallengeFlash(`${result.challengerName} 质疑失败`, 1800);
+  }
+  // 若质疑成功（出牌者撒谎），横幅已在按下时显示，不重复
 });
 watch(() => store.room?.currentDiceBid, (v, old) => {
   if (v && v !== old && soundEnabled.value) sound.bidConfirm();
@@ -258,6 +289,12 @@ function isCurrentPlayer(id: string) {
 function onDiceBid(qty: number, face: DiceFace) { store.diceBid(qty, face); }
 function onChallenge() {
   if (soundEnabled.value) { sound.challengePress(); inkSplash(); }
+  // 立即显示「XX 质疑了 XX」横幅，不等待服务端结果
+  const challengerName = store.me?.name ?? '';
+  const bidderName = store.gameMode === 'dice'
+    ? (store.room?.currentDiceBid?.playerName ?? '')
+    : (store.room?.currentCardBid?.playerName ?? '');
+  showChallengeFlash(`${challengerName} 质疑了 ${bidderName}`, 1800);
   store.gameMode === 'dice' ? store.diceChallenge() : store.cardChallenge();
 }
 function onCardPlay(cards: CardValue[]) { store.cardPlay(cards); }
@@ -481,9 +518,55 @@ onMounted(() => {
 .log-label  { font-size: 0.62rem; color: var(--gold); opacity: 0.6; flex-shrink: 0; letter-spacing: 0.1em; }
 .log-latest { font-size: 0.62rem; color: var(--parchment); opacity: 0.4; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .log-arrow  { font-size: 0.58rem; color: var(--ink-light); opacity: 0.5; flex-shrink: 0; }
-.log-expanded { max-height: 30vh; overflow-y: auto; padding: 0 0.6rem 0.4rem; }
-.log-expand-enter-active, .log-expand-leave-active { transition: max-height 0.25s ease, opacity 0.2s ease; }
+.log-expanded { max-height: 45vh; overflow-y: auto; padding: 0 0.6rem 0.4rem; }
+.log-expand-enter-active, .log-expand-leave-active { transition: max-height 0.3s ease, opacity 0.22s ease; }
 .log-expand-enter-from, .log-expand-leave-to { max-height: 0; opacity: 0; }
+
+/* ── 常驻输入区 ── */
+.log-persistent-input {
+  border-top: 1px solid rgba(212,168,67,0.1);
+  background: rgba(0,0,0,0.18);
+}
+.log-emoji-bar {
+  display: flex;
+  gap: 0.22rem;
+  padding: 0.22rem 0.75rem 0.1rem;
+  flex-wrap: wrap;
+}
+.log-emoji-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.1rem;
+  transition: transform 0.12s;
+  line-height: 1;
+}
+.log-emoji-btn:active { transform: scale(0.82); }
+.log-input-row {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.28rem 0.75rem calc(env(safe-area-inset-bottom, 0px) + 0.28rem);
+}
+.log-input {
+  flex: 1;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.45rem;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.07);
+  color: var(--parchment);
+  font-size: 0.8rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.log-input:focus { border-color: rgba(212,168,67,0.4); }
+.log-input::placeholder { color: rgba(255,255,255,0.22); }
+.log-send-btn {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
 
 /* ── 聊天抽屉 ── */
 .chat-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,0.45); display: flex; flex-direction: column; justify-content: flex-end; }
