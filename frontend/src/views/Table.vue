@@ -351,25 +351,21 @@ const soundEnabled  = ref(localStorage.getItem('chuiniu_sound') !== 'off');
 const showDealing   = ref(false);
 
 // ── 游戏内 BGM（喻晓庆 - 人在草木间）──────────────────────────
-// 游戏开始第30秒后播放，音量50%，仅播放一遍
+// 进入游戏局内立即播放，音量50%，仅播放一遍
 const gameBgm = new Audio('/audio/game-bgm.mp3');
 gameBgm.loop   = false;
 gameBgm.volume = 0.5;
-let gameBgmTimer: ReturnType<typeof setTimeout> | null = null;
 let gameBgmStarted = false;
 
-function startGameBgmTimer() {
+function startGameBgm() {
   if (gameBgmStarted) return;
   gameBgmStarted = true;
-  gameBgmTimer = setTimeout(() => {
-    if (soundEnabled.value) {
-      gameBgm.play().catch(() => {});
-    }
-  }, 30_000);
+  if (soundEnabled.value) {
+    gameBgm.play().catch(() => {});
+  }
 }
 
 function stopGameBgm() {
-  if (gameBgmTimer) { clearTimeout(gameBgmTimer); gameBgmTimer = null; }
   gameBgm.pause();
   gameBgm.currentTime = 0;
   gameBgmStarted = false;
@@ -387,19 +383,19 @@ function showChallengeFlash(text: string, duration = 1400) {
 
 watch(soundEnabled, v => {
   localStorage.setItem('chuiniu_sound', v ? 'on' : 'off');
-  // 静音时暂停游戏BGM，开启时若计时器已触发则恢复
+  // 静音时暂停游戏BGM，开启时若BGM已启动则恢复播放
   if (!v) {
     gameBgm.pause();
-  } else if (gameBgmStarted && gameBgm.paused && gameBgm.currentTime > 0) {
+  } else if (gameBgmStarted && gameBgm.paused) {
     gameBgm.play().catch(() => {});
   }
 });
 
-// 游戏开始（第1回合发牌）时启动30秒计时器
+// 游戏开始（第1回合发牌）时立即播放 BGM
 // game:start / game:roundStart 都会使 round 从 0→1，此处监听 round===1 精准触发
 watch(() => store.room?.round, (newRound, oldRound) => {
   if (newRound === 1 && (oldRound === undefined || oldRound === 0)) {
-    startGameBgmTimer();
+    startGameBgm();
   }
 });
 watch(() => store.phase, (p) => {
