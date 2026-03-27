@@ -50,7 +50,7 @@
           v-for="(card, ci) in revealCards"
           :key="ci"
           class="flip-card"
-          :class="cardFlipped[ci] ? (isCardWrong(card) ? 'flipped wrong' : 'flipped ok') : ''"
+          :class="(cardFlipped as boolean[])[ci as number] ? (isCardWrong(card) ? 'flipped wrong' : 'flipped ok') : ''"
         >
           <div class="flip-card__back">
             <span class="flip-card__back-text">龙</span>
@@ -89,7 +89,7 @@ const props = defineProps<{
 
 const totalCards = computed(() => props.stacks.reduce((s, t) => s + t.count, 0));
 const isRevealing = computed(() => !!props.challengeResult && props.challengeResult.type === 'card');
-const revealCards = computed(() => (props.challengeResult?.bid as any)?.actualCards ?? []);
+const revealCards = computed<string[]>(() => (props.challengeResult?.bid as { actualCards?: string[] } | undefined)?.actualCards ?? []);
 
 const cardFlipped = ref<boolean[]>([]);
 const allFlipped = computed(() => cardFlipped.value.length > 0 && cardFlipped.value.every(Boolean));
