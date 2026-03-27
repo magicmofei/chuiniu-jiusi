@@ -262,7 +262,8 @@ function startNextRound(roomId: string): void {
     });
   });
   const firstPlayer = engine.getCurrentPlayer();
-  if (firstPlayer?.isAI) scheduleAIAction(roomId, 1000);
+  // 延迟需大于前端弹窗关闭动画时间（约 1s）+ 发牌动画（约 0.7s），给前端足够时间应用 roundStart
+  if (firstPlayer?.isAI) scheduleAIAction(roomId, 2500);
 }
 
 

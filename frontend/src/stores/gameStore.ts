@@ -206,8 +206,9 @@ export const useGameStore = defineStore('game', () => {
     s.on('error', (msg: string) => { errorMsg.value = msg; });
     s.on('room:update', (r: RoomPublicView) => { room.value = r; gameMode.value = r.mode; });
     s.on('game:stateUpdate', (r: RoomPublicView) => {
-      // 惩罚弹窗显示期间：仅允许 gameOver 相态更新通过，其余跳过以免清掉 punishment 状态
-      if (showPunishment.value && r.phase !== 'gameOver') return;
+      // 惩罚弹窗显示期间：仅允许 gameOver / punishment / result 相态更新通过
+      // bidding 阶段也需通过，否则 AI 行动后的状态会被丢弃导致卡死
+      if (showPunishment.value && r.phase !== 'gameOver' && r.phase !== 'bidding' && r.phase !== 'result') return;
       const prevDiceBid = room.value?.currentDiceBid;
       const prevCardBid = room.value?.currentCardBid;
       const prevPhase   = room.value?.phase;

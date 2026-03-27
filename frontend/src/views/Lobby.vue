@@ -5,13 +5,6 @@
     <!-- 渐变遮罩：让背景与UI融合 -->
     <div class="lobby-overlay" aria-hidden="true"></div>
 
-    <!-- 云雾层：简单CSS动画，低资源消耗 -->
-    <div class="mist-layer" aria-hidden="true">
-      <div class="mist mist-1"></div>
-      <div class="mist mist-2"></div>
-      <div class="mist mist-3"></div>
-    </div>
-
     <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
       <span class="absolute top-8 left-8 text-8xl opacity-[0.03] rotate-12">竹</span>
       <span class="absolute bottom-10 right-10 text-9xl opacity-[0.03] -rotate-12">酒</span>
@@ -326,70 +319,6 @@ watch(() => store.phase, (p) => {
       transparent 40%,
       rgba(10,8,4,0.6) 100%
     );
-}
-
-/* ── 云雾层（简化版，低资源消耗） ──────────────────── */
-.mist-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-/* 三条横向云雾带，固定定位 + opacity呼吸动画，无blur滤镜 */
-.mist {
-  position: absolute;
-  left: -10%;
-  width: 120%;
-  border-radius: 50%;
-  will-change: opacity, transform;
-}
-
-.mist-1 {
-  height: 80px;
-  bottom: 35%;
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(245,240,232,0.08) 20%,
-    rgba(245,240,232,0.14) 50%,
-    rgba(245,240,232,0.08) 80%,
-    transparent 100%
-  );
-  animation: mistBreath 8s ease-in-out infinite;
-  animation-delay: 0s;
-}
-.mist-2 {
-  height: 60px;
-  bottom: 55%;
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(212,168,67,0.05) 15%,
-    rgba(245,240,232,0.10) 45%,
-    rgba(245,240,232,0.07) 75%,
-    transparent 100%
-  );
-  animation: mistBreath 11s ease-in-out infinite;
-  animation-delay: -4s;
-}
-.mist-3 {
-  height: 100px;
-  bottom: 20%;
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(245,240,232,0.06) 25%,
-    rgba(245,240,232,0.11) 55%,
-    rgba(245,240,232,0.05) 80%,
-    transparent 100%
-  );
-  animation: mistBreath 14s ease-in-out infinite;
-  animation-delay: -7s;
-}
-
-@keyframes mistBreath {
-  0%   { opacity: 0.3; transform: translateX(-3%) translateY(0); }
-  50%  { opacity: 1;   transform: translateX(3%)  translateY(-6px); }
-  100% { opacity: 0.3; transform: translateX(-3%) translateY(0); }
 }
 
 /* 确保内容在云雾层之上 */

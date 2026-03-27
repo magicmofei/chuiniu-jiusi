@@ -95,7 +95,7 @@ const cardFlipped = ref<boolean[]>([]);
 const allFlipped = computed(() => cardFlipped.value.length > 0 && cardFlipped.value.every(Boolean));
 
 function isCardWrong(card: string): boolean {
-  if (!props.challengeResult) return false;
+  if (!props.challengeResult || props.challengeResult.type !== 'card') return false;
   const target = props.challengeResult.bid.targetCard;
   return card !== target && card !== 'Joker';
 }
