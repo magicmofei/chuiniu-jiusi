@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen flex flex-col safe-top" style="background:var(--ink-dark)">
+  <div class="min-h-screen flex flex-col safe-top table-scene">
     <OpeningQuoteOverlay />
     <WinnerOverlay :show="store.winnerBanner" :winner-name="store.room?.winner??''" :rounds="store.room?.round" @close="store.winnerBanner=false" />
 
@@ -221,4 +221,42 @@ onMounted(() => {
 .bid-leave-to   { opacity:0; transform:translateY(6px); }
 .toast-enter-active,.toast-leave-active { transition: all 0.3s ease; }
 .toast-enter-from,.toast-leave-to { opacity:0; transform:translate(-50%,16px); }
+
+/* ── 游戏桌背景图 ──────────────────────────────────────── */
+.table-scene {
+  position: relative;
+  background: var(--ink-dark);
+}
+.table-scene::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image: url('/table-bg.png');
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  filter: brightness(0.45) saturate(1.05);
+  pointer-events: none;
+}
+.table-scene::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(to bottom,
+      rgba(10,8,4,0.72) 0%,
+      rgba(10,8,4,0.30) 20%,
+      rgba(10,8,4,0.18) 50%,
+      rgba(10,8,4,0.40) 80%,
+      rgba(10,8,4,0.80) 100%
+    );
+  pointer-events: none;
+}
+/* 确保所有直接子内容在背景伪元素之上 */
+.table-scene > * {
+  position: relative;
+  z-index: 2;
+}
 </style>

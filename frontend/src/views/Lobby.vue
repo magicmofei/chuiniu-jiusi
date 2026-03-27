@@ -23,13 +23,16 @@
       <span class="absolute top-8 left-8 text-8xl opacity-[0.03] rotate-12">竹</span>
       <span class="absolute bottom-10 right-10 text-9xl opacity-[0.03] -rotate-12">酒</span>
     </div>
-    <div class="text-center mb-8 fade-in-up" style="position:relative;z-index:10;">
+
+    <!-- 主内容层：z-index 高于所有背景/云雾层 -->
+    <div class="lobby-content">
+    <div class="text-center mb-8 fade-in-up">
       <div class="candle-flicker text-6xl mb-2 inline-block">🕯️</div>
       <h1 class="text-5xl font-bold tracking-[0.25em]" style="color:var(--gold);text-shadow:0 0 40px rgba(212,168,67,0.6)">吹牛酒肆</h1>
       <p class="mt-2 text-xs tracking-[0.3em] opacity-50">汴京酒楼版 · 宋代历史人物</p>
     </div>
     <transition name="fade" mode="out-in">
-      <div v-if="!store.roomId" key="form" class="card-ink p-7 w-full max-w-sm" style="position:relative;z-index:10;">
+      <div v-if="!store.roomId" key="form" class="card-ink p-7 w-full max-w-sm">
         <button class="w-full mb-4 p-3 rounded-xl border border-yellow-600/40 bg-yellow-900/15 hover:border-yellow-500/60 flex items-center gap-3 transition-all"
           @click="showCharPanel = true"
         >
@@ -67,7 +70,7 @@
         <button @click="joinGame" :disabled="!name.trim()||joining" class="btn-gold w-full">{{ joining?'入座中...':'踏入酒肆' }}</button>
         <button @click="showRoomList=true" class="w-full mt-2 py-2 rounded-lg border text-xs font-semibold tracking-wider transition-all" style="border-color:rgba(255,255,255,0.1);color:rgba(255,255,255,0.35)" >🏮 浏览所有酒肆</button>
       </div>
-      <div v-else key="lobby" class="card-ink p-7 w-full max-w-md" style="position:relative;z-index:10;">
+      <div v-else key="lobby" class="card-ink p-7 w-full max-w-md">
         <div class="flex items-center justify-between mb-5">
           <h2 class="font-semibold tracking-widest" style="color:var(--gold)">等待豪客入座</h2>
           <div class="flex items-center gap-2">
@@ -114,7 +117,8 @@
         </div>
       </div>
     </transition>
-    <p class="mt-8 text-xs opacity-10 tracking-widest" style="position:relative;z-index:10;">宋·汴京酒楼 · 四人联机 · v2.0</p>
+    <p class="mt-8 text-xs opacity-10 tracking-widest">宋·汴京酒楼 · 四人联机 · v2.0</p>
+    </div><!-- /lobby-content -->
     <CharacterSelectPanel v-if="showCharPanel" :initial-id="store.selectedCharacter?.id" @select="onCharSelect" @close="showCharPanel=false" />
 
     <!-- 房间列表弹窗 -->
@@ -438,5 +442,13 @@ watch(() => store.phase, (p) => {
 }
 
 /* 确保内容在云雾层之上 */
-.relative { position: relative; }
+.lobby-content {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  pointer-events: auto;
+}
 </style>
