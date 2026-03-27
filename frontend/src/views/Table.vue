@@ -202,7 +202,7 @@ import GameLog from '../components/GameLog.vue';
 import WinnerOverlay from '../components/WinnerOverlay.vue';
 import TableArea from '../components/TableArea.vue';
 import DealingOverlay from '../components/DealingOverlay.vue';
-import { sound } from '../utils/useSound';
+
 import { replay } from '../utils/ReplayRecorder';
 import { inkSplash } from '../utils/useConfetti';
 import { preloadToastAudio } from '../utils/toastQuotes';
@@ -343,10 +343,9 @@ function onCardPlayWithRects(payload: { cards: CardValue[]; rects: DOMRect[] }) 
 function persistentSend() {
   if (!persistentInput.value.trim()) return;
   store.sendChat(persistentInput.value.trim());
-  sound.chatSend();
   persistentInput.value = '';
 }
-function persistentSendEmoji(e: string) { store.sendChat(e, 'emoji'); sound.chatSend(); }
+function persistentSendEmoji(e: string) { store.sendChat(e, 'emoji'); }
 const soundEnabled  = ref(localStorage.getItem('chuiniu_sound') !== 'off');
 const showDealing   = ref(false);
 
@@ -415,12 +414,7 @@ watch(() => store.challengeResult, (result) => {
   }
   // 若质疑成功（出牌者撒谎），横幅已在按下时显示，不重复
 });
-watch(() => store.room?.currentDiceBid, (v, old) => {
-  if (v && v !== old && soundEnabled.value) sound.bidConfirm();
-});
-watch(() => store.room?.currentCardBid, (v, old) => {
-  if (v && v !== old && soundEnabled.value) sound.bidConfirm();
-});
+
 watch(() => store.room?.round, (newRound, oldRound) => {
   if (newRound && newRound !== oldRound && store.gameMode === 'card') showDealing.value = true;
   // 回合开始后偷偷预加载本人角色的祝酒词语音，无感知
@@ -480,7 +474,7 @@ function isCurrentPlayer(id: string) {
 }
 function onDiceBid(qty: number, face: DiceFace) { store.diceBid(qty, face); }
 function onChallenge() {
-  if (soundEnabled.value) { sound.challengePress(); inkSplash(); }
+  if (soundEnabled.value) { inkSplash(); }
   // 立即显示「XX 质疑了 XX」横幅，不等待服务端结果
   const challengerName = store.me?.name ?? '';
   const bidderId = store.gameMode === 'dice'

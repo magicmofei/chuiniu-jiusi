@@ -54,7 +54,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue';
 import { useGameStore } from '../stores/gameStore';
-import { sound } from '../utils/useSound';
+
 
 const props = defineProps<{ hideInput?: boolean }>();
 
@@ -123,10 +123,9 @@ function entryClass(entry: FeedEntry) {
 function send() {
   if (!input.value.trim()) return;
   store.sendChat(input.value.trim());
-  sound.chatSend();
   input.value = '';
 }
-function sendEmoji(e: string) { store.sendChat(e, 'emoji'); sound.chatSend(); }
+function sendEmoji(e: string) { store.sendChat(e, 'emoji'); }
 
 watch(() => unifiedFeed.value.length, async () => {
   await nextTick();

@@ -47,6 +47,7 @@
             <div v-else-if="activePhase==='poisoned'" key="p4" class="stage-inner">
               <div class="emoji-wrap emoji-lg anim-fall">😵</div>
               <p class="stage-label c-red">蒙汗药！昏倒！</p>
+              <p v-if="poisonQuote" class="stage-quote c-red">{{ poisonQuote }}</p>
               <p class="stage-sub">{{ loserName }}{{ dicePunishment?.eliminated ? ' 已被淘汰！' : ' 还剩 ' + dicePunishment?.livesRemaining + ' 命' }}</p>
             </div>
             <div v-else-if="activePhase==='safe'"     key="p5" class="stage-inner">
@@ -124,6 +125,7 @@
             <div v-else-if="activePhase==='poisoned'" key="p4" class="stage-inner">
               <div class="emoji-wrap emoji-lg anim-fall">😵</div>
               <p class="stage-label c-red">蒙汗药！昏倒！</p>
+              <p v-if="poisonQuote" class="stage-quote c-red">{{ poisonQuote }}</p>
               <p class="stage-sub">{{ loserName }}{{ cardPunishment?.eliminated ? ' 已被淘汰！' : ' 还剩 ' + cardPunishment?.livesRemaining + ' 命' }}</p>
             </div>
             <div v-else-if="activePhase==='safe'"     key="p5" class="stage-inner">
@@ -156,6 +158,7 @@ const emit  = defineEmits<{ close: [] }>();
 
 const canClose  = ref(false);
 const toastQuote = ref('');
+const poisonQuote = ref('');
 
 // 输家角色 id，用于抽取专属祝酒词
 const loserCharacterId = computed(() => {
@@ -211,7 +214,12 @@ function runDiceAnim() {
   setTimeout(async () => {
     phase.value = poi ? 'poisoned' : 'safe';
     if (poi) {
+      const q = getToastQuote(loserCharacterId.value);
+      poisonQuote.value = q.text;
       sound.poisoned(); inkSplash();
+      store.voicePlaying = true;
+      await playToastAudio(q.audio);
+      store.voiceEnded();
       canClose.value = true;
     } else {
       const q = getToastQuote(loserCharacterId.value);
@@ -271,7 +279,12 @@ function startDrinkAnim(poi: boolean | null) {
 async function showFinalResult(poi: boolean) {
   phase.value = poi ? 'poisoned' : 'safe';
   if (poi) {
+    const q = getToastQuote(loserCharacterId.value);
+    poisonQuote.value = q.text;
     sound.poisoned(); inkSplash();
+    store.voicePlaying = true;
+    await playToastAudio(q.audio);
+    store.voiceEnded();
     canClose.value = true;
   } else {
     const q = getToastQuote(loserCharacterId.value);
@@ -463,6 +476,15 @@ onUnmounted(() => {});
   opacity: .45;
   text-align: center;
   margin-bottom: .5rem;
+}
+.stage-quote {
+  font-size: .78rem;
+  font-style: italic;
+  letter-spacing: .06em;
+  text-align: center;
+  opacity: .85;
+  margin: .3rem 0 .1rem;
+  line-height: 1.5;
 }
 
 /* ══ 亮骰区（骰子模式）══ */
