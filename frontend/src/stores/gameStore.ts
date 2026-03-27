@@ -423,7 +423,6 @@ export const useGameStore = defineStore('game', () => {
       { playerId: myId.value, playerName: myName.value, count: cards.length },
     ];
     // 乐观更新手牌（服务端 card:handUpdate 会覆盖为权威值）
-    const next: CardValue[] = [];
     const pool = [...myHand.value];
     // 标记需要移除的索引
     const toRemove = new Set<number>();
