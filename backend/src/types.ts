@@ -292,6 +292,7 @@ export interface ServerToClientEvents {
   'player:call': (bid: DiceBid | Omit<CardBid, 'actualCards'>) => void;
   'player:challenge': (result: ChallengeResult) => void;
   'card:pickBottle': (data: { loserId: string; loserName: string; remainingBottles: number[] }) => void;
+  'card:handUpdate': (data: { hand: CardValue[] }) => void;
   'card:bottlePicked': (data: { loserId: string; loserName: string; bottleIndex: number }) => void;
   'card:bottleResult': (punishment: BottlePunishment) => void;
   'chat:message': (msg: {

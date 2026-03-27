@@ -239,6 +239,9 @@ export const useGameStore = defineStore('game', () => {
       bottlePickPrompt.value = data;
       addLog(`${data.loserName} 需要从剩余酒瓶中选一瓶`);
     });
+    s.on('card:handUpdate', (data: { hand: CardValue[] }) => {
+      myHand.value = data.hand;
+    });
     s.on('card:bottlePicked', (data: { loserId: string; loserName: string; bottleIndex: number }) => {
       pendingBottlePick.value = data;
       addLog(`${data.loserName} 选中了 1 瓶，正在喝…`);

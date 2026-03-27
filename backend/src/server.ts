@@ -427,6 +427,12 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     const err = engine.placeBid(socket.id, data);
     if (err) { socket.emit('error', err); return; }
 
+    // 把权威手牌发回给出牌玩家（覆盖前端乐观更新，确保一致）
+    const player = room.players.find(p => p.id === socket.id);
+    if (player) {
+      socket.emit('card:handUpdate', { hand: [...player.hand] });
+    }
+
     const updatedView = rm.toPublicView(room);
     io.to(room.roomId).emit('game:stateUpdate', updatedView);
     console.log(`[出牌] ${socket.id}: ${(data as any).cards?.length}张目标牌`);
