@@ -3,7 +3,7 @@
     <div class="char-panel__inner">
       <div class="char-panel__header">
         <h2>选择你的角色</h2>
-        <button class="char-panel__close" @click="$emit('close')">✕</button>
+        <button class="char-panel__close" @click="playClickSound(); $emit('close')">✕</button>
       </div>
 
       <!-- 分类筛选 -->
@@ -12,7 +12,7 @@
           v-for="cat in categories" :key="cat"
           class="cat-btn"
           :class="{ active: activeCategory === cat }"
-          @click="activeCategory = cat"
+          @click="playClickSound(); activeCategory = cat"
         >{{ cat }}</button>
       </div>
 
@@ -22,7 +22,7 @@
           v-for="char in filteredChars" :key="char.id"
           class="char-card"
           :class="{ selected: selected?.id === char.id }"
-          @click="select(char)"
+          @click="playClickSound(); select(char)"
         >
           <span class="char-card__model" :class="'model-' + char.model">{{ modelEmoji(char.model) }}</span>
           <span class="char-card__name">{{ char.name }}</span>
@@ -45,8 +45,8 @@
       </transition>
 
       <div class="char-panel__actions">
-        <button class="btn-gold" :disabled="!selected" @click="confirm">确认入座</button>
-        <button class="btn-cancel" @click="$emit('close')">取消</button>
+        <button class="btn-gold" :disabled="!selected" @click="playClickSound(); confirm()">确认入座</button>
+        <button class="btn-cancel" @click="playClickSound(); $emit('close')">取消</button>
       </div>
     </div>
   </div>
@@ -55,6 +55,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { CHARACTERS, type HistoricalCharacter, type CharacterModel } from '../stores/gameStore';
+import { playClickSound } from '../utils/useSound';
 
 const emit = defineEmits<{
   (e: 'select', char: HistoricalCharacter): void;

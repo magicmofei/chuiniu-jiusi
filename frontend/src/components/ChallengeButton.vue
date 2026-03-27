@@ -1,6 +1,6 @@
 <template>
   <button
-    @click="emit('challenge')"
+    @click="playClickSound(); emit('challenge')"
     :disabled="disabled"
     class="btn-vermillion flex-1 relative overflow-hidden"
     :class="{'opacity-40 cursor-not-allowed': disabled}"
@@ -15,6 +15,8 @@
 </template>
 
 <script setup lang="ts">
+import { playClickSound } from '../utils/useSound';
+
 defineProps<{ disabled?: boolean }>();
 const emit = defineEmits<{ challenge: [] }>();
 </script>

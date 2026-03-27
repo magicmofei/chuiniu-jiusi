@@ -19,8 +19,8 @@
       </div>
       <div class="top-bar__right">
         <span :style="{color:store.connected?'var(--jade)':'var(--vermillion)'}">{{ store.connected?'●':'○' }}</span>
-        <button @click="soundEnabled=!soundEnabled" class="icon-btn">{{ soundEnabled?'🔊':'🔇' }}</button>
-        <button v-if="store.phase!=='gameOver'" @click="confirmLeave" class="leave-btn">离开</button>
+        <button @click="playClickSound(); soundEnabled=!soundEnabled" class="icon-btn">{{ soundEnabled?'🔊':'🔇' }}</button>
+        <button v-if="store.phase!=='gameOver'" @click="playClickSound(); confirmLeave()" class="leave-btn">离开</button>
       </div>
     </header>
 
@@ -81,8 +81,8 @@
             <p class="gameover-title">{{ store.room?.winner }} 荣登酒霸！</p>
             <p style="opacity:0.4;font-size:0.65rem;margin:0.2rem 0 0.6rem">共 {{ store.room?.round }} 回合</p>
             <div class="gameover-btns">
-              <button @click="backToLobby" class="btn-gold" style="font-size:0.78rem;padding:0.4rem 1rem">返回酒肆</button>
-              <button @click="downloadReplay" class="btn-gold" style="font-size:0.7rem;padding:0.4rem 0.8rem">💾 录像</button>
+              <button @click="playClickSound(); backToLobby()" class="btn-gold" style="font-size:0.78rem;padding:0.4rem 1rem">返回酒肆</button>
+              <button @click="playClickSound(); downloadReplay()" class="btn-gold" style="font-size:0.7rem;padding:0.4rem 0.8rem">💾 录像</button>
             </div>
           </div>
         </div>
@@ -137,7 +137,7 @@
       <!-- 常驻聊天输入区 -->
       <div class="log-persistent-input">
         <div class="log-emoji-bar">
-          <button v-for="e in persistentEmojis" :key="e" @click="persistentSendEmoji(e)" class="log-emoji-btn">{{ e }}</button>
+          <button v-for="e in persistentEmojis" :key="e" @click="playClickSound(); persistentSendEmoji(e)" class="log-emoji-btn">{{ e }}</button>
         </div>
         <div class="log-input-row">
           <input
@@ -147,7 +147,7 @@
             placeholder="说点什么…"
             class="log-input"
           />
-          <button @click="persistentSend" class="btn-gold log-send-btn">发</button>
+          <button @click="playClickSound(); persistentSend()" class="btn-gold log-send-btn">发</button>
         </div>
       </div>
     </section>
@@ -206,6 +206,7 @@ import DealingOverlay from '../components/DealingOverlay.vue';
 import { replay } from '../utils/ReplayRecorder';
 import { inkSplash } from '../utils/useConfetti';
 import { preloadToastAudio } from '../utils/toastQuotes';
+import { playClickSound } from '../utils/useSound';
 
 interface FlyingCard {
   id: number;

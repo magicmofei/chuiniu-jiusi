@@ -49,7 +49,7 @@
         <div v-else class="text-center py-4">
           <p class="text-4xl mb-3">🏚️</p>
           <p class="text-red-400 text-sm">房间不存在或已结束</p>
-          <button @click="goHome" class="btn-gold mt-4 text-xs px-6">返回大厅</button>
+          <button @click="playClickSound(); goHome()" class="btn-gold mt-4 text-xs px-6">返回大厅</button>
         </div>
       </div>
 
@@ -57,7 +57,7 @@
       <div v-if="roomInfo" class="card-ink p-6 space-y-4">
         <!-- 头像选择 -->
         <div class="flex justify-center gap-2">
-          <button v-for="av in avatars" :key="av" @click="selectedAvatar = av"
+          <button v-for="av in avatars" :key="av" @click="playClickSound(); selectedAvatar = av"
             class="text-2xl p-1.5 rounded-xl border-2 transition-all"
             :class="selectedAvatar === av
               ? 'border-yellow-500 bg-yellow-900/20 scale-110'
@@ -78,19 +78,19 @@
 
         <!-- 按钮区 -->
         <div v-if="!isFull" class="space-y-2">
-          <button @click="joinAsPlayer" :disabled="!name.trim() || joining" class="btn-gold w-full">
+          <button @click="playClickSound(); joinAsPlayer()" :disabled="!name.trim() || joining" class="btn-gold w-full">
             {{ joining ? '入座中…' : '⚔ 入座参战' }}
           </button>
-          <button @click="joinAsSpectator" :disabled="!name.trim() || joining"
+          <button @click="playClickSound(); joinAsSpectator()" :disabled="!name.trim() || joining"
             class="w-full py-2 rounded-lg border text-xs font-semibold tracking-wider transition-all"
             style="border-color:rgba(255,255,255,0.15);color:rgba(255,255,255,0.5)"
           >👁 仅观战</button>
         </div>
         <div v-else class="space-y-2">
-          <button @click="joinAsSpectator" :disabled="!name.trim() || joining" class="btn-gold w-full">
+          <button @click="playClickSound(); joinAsSpectator()" :disabled="!name.trim() || joining" class="btn-gold w-full">
             {{ joining ? '进入中…' : '👁 进入观战' }}
           </button>
-          <button @click="goHome"
+          <button @click="playClickSound(); goHome()"
             class="w-full py-2 rounded-lg border text-xs font-semibold tracking-wider transition-all"
             style="border-color:rgba(255,255,255,0.15);color:rgba(255,255,255,0.5)"
           >返回大厅</button>
@@ -106,6 +106,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useGameStore } from '../stores/gameStore';
+import { playClickSound } from '../utils/useSound';
 
 const route  = useRoute();
 const router = useRouter();

@@ -48,7 +48,7 @@
 
         <!-- 录像下载按钮 -->
         <button
-          @click.stop="downloadReplay"
+          @click.stop="playClickSound(); downloadReplay()"
           class="mt-6 btn-gold text-xs px-6"
         >💾 保存录像回放</button>
       </div>
@@ -60,6 +60,7 @@
 import { watch } from 'vue';
 import { victoryFireworks } from '../utils/useConfetti';
 import { replay } from '../utils/ReplayRecorder';
+import { playClickSound } from '../utils/useSound';
 
 const props = defineProps<{
   show: boolean;

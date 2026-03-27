@@ -11,7 +11,7 @@
       <button
         v-for="(card, i) in hand" :key="i"
         :ref="el => setCardRef(i, el)"
-        @click="toggleSelect(i)"
+        @click="playClickSound(); toggleSelect(i)"
         :disabled="disabled || launching"
         class="poker-card"
         :class="[
@@ -39,8 +39,8 @@
         已选 <strong style="color:var(--gold)">{{ selected.length }}</strong> 张
         · 声称全是&nbsp;<strong style="color:var(--gold)">{{ targetCard ?? '目标牌' }}</strong>
       </span>
-      <button @click="playCards" class="btn-gold text-xs px-4 py-1.5">出牌！</button>
-      <button @click="selected = []" class="text-xs opacity-40 hover:opacity-70">取消</button>
+      <button @click="playClickSound(); playCards()" class="btn-gold text-xs px-4 py-1.5">出牌！</button>
+      <button @click="playClickSound(); selected = []" class="text-xs opacity-40 hover:opacity-70">取消</button>
     </div>
 
     <p v-if="!hasSelected && !disabled && !launching && hand.length > 0" class="text-xs opacity-20 mt-2">
@@ -53,6 +53,7 @@
 import { ref, computed } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import type { CardValue } from '../stores/gameStore';
+import { playClickSound } from '../utils/useSound';
 
 const props = defineProps<{
   hand: CardValue[];

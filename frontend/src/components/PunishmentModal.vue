@@ -93,7 +93,7 @@
                 }"
                 :style="bottleGridStyle(pos)"
                 :disabled="isShuffling || selectedBottle !== null"
-                @click="chooseBotlle(idx)"
+                @click="playClickSound(); chooseBotlle(idx)"
               >
                 <svg viewBox="0 0 28 44" fill="none" xmlns="http://www.w3.org/2000/svg" class="btl-svg">
                   <ellipse cx="14" cy="33" rx="10" ry="9" :fill="bottleColor(idx)"/>
@@ -137,7 +137,7 @@
         </div>
       </template>
 
-      <button @click="tryClose" class="btn-continue" :disabled="!canClose">
+      <button @click="playClickSound(); tryClose()" class="btn-continue" :disabled="!canClose">
         {{ canClose ? (result.room.phase==='gameOver' ? '查看结果' : '继续') : '请稍候…' }}
       </button>
     </div>
@@ -148,7 +148,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import type { ChallengeResult } from '../stores/gameStore';
 import { useGameStore } from '../stores/gameStore';
-import { playToastAudio, playChooseWineSound, playDrinkSound } from '../utils/useSound';
+import { playToastAudio, playChooseWineSound, playDrinkSound, playClickSound } from '../utils/useSound';
 import { inkSplash, fireConfetti } from '../utils/useConfetti';
 import { getToastQuote } from '../utils/toastQuotes';
 
@@ -214,12 +214,7 @@ function runDiceAnim() {
   setTimeout(async () => {
     phase.value = poi ? 'poisoned' : 'safe';
     if (poi) {
-      const q = getToastQuote(loserCharacterId.value);
-      poisonQuote.value = q.text;
       inkSplash();
-      store.voicePlaying = true;
-      await playToastAudio(q.audio);
-      store.voiceEnded();
       canClose.value = true;
     } else {
       const q = getToastQuote(loserCharacterId.value);
@@ -279,12 +274,7 @@ function startDrinkAnim(poi: boolean | null) {
 async function showFinalResult(poi: boolean) {
   phase.value = poi ? 'poisoned' : 'safe';
   if (poi) {
-    const q = getToastQuote(loserCharacterId.value);
-    poisonQuote.value = q.text;
     inkSplash();
-    store.voicePlaying = true;
-    await playToastAudio(q.audio);
-    store.voiceEnded();
     canClose.value = true;
   } else {
     const q = getToastQuote(loserCharacterId.value);

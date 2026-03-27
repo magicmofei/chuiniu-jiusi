@@ -20,7 +20,7 @@
     <transition name="fade" mode="out-in">
       <div v-if="!store.roomId" key="form" class="card-ink p-7 w-full max-w-sm">
         <button class="w-full mb-4 p-3 rounded-xl border border-yellow-600/40 bg-yellow-900/15 hover:border-yellow-500/60 flex items-center gap-3 transition-all"
-          @click="showCharPanel = true"
+          @click="playClickSound(); showCharPanel = true"
         >
           <span class="text-2xl">{{ charEmoji }}</span>
           <div class="flex-1 text-left min-w-0">
@@ -39,9 +39,9 @@
         <div class="mb-4">
           <label class="block text-xs tracking-widest mb-1.5 opacity-60">游戏模式</label>
           <div class="grid grid-cols-2 gap-2">
-            <button @click="mode='dice'" class="py-2 rounded-lg border text-xs font-semibold tracking-wider transition-all"
+            <button @click="playClickSound(); mode='dice'" class="py-2 rounded-lg border text-xs font-semibold tracking-wider transition-all"
               :class="mode==='dice'?'border-yellow-500 bg-yellow-900/20 text-yellow-300':'border-white/10 text-white/40'">🎲 骰子模式</button>
-            <button @click="mode='card'" class="py-2 rounded-lg border text-xs font-semibold tracking-wider transition-all"
+            <button @click="playClickSound(); mode='card'" class="py-2 rounded-lg border text-xs font-semibold tracking-wider transition-all"
               :class="mode==='card'?'border-yellow-500 bg-yellow-900/20 text-yellow-300':'border-white/10 text-white/40'">🃏 酒令模式</button>
           </div>
         </div>
@@ -53,17 +53,17 @@
           />
         </div>
         <p v-if="store.errorMsg" class="text-red-400 text-xs mb-3 text-center">{{ store.errorMsg }}</p>
-        <button @click="joinGame" :disabled="!name.trim()||joining" class="btn-gold w-full">{{ joining?'入座中...':'踏入酒肆' }}</button>
-        <button @click="showRoomList=true" class="w-full mt-2 py-2 rounded-lg border text-xs font-semibold tracking-wider transition-all" style="border-color:rgba(255,255,255,0.1);color:rgba(255,255,255,0.35)" >🏮 浏览所有酒肆</button>
+        <button @click="playClickSound(); joinGame()" :disabled="!name.trim()||joining" class="btn-gold w-full">{{ joining?'入座中...':'踏入酒肆' }}</button>
+        <button @click="playClickSound(); showRoomList=true" class="w-full mt-2 py-2 rounded-lg border text-xs font-semibold tracking-wider transition-all" style="border-color:rgba(255,255,255,0.1);color:rgba(255,255,255,0.35)" >🏮 浏览所有酒肆</button>
       </div>
       <div v-else key="lobby" class="card-ink p-7 w-full max-w-md">
         <div class="flex items-center justify-between mb-5">
           <h2 class="font-semibold tracking-widest" style="color:var(--gold)">等待豪客入座</h2>
           <div class="flex items-center gap-2">
             <span class="text-xs px-3 py-1 rounded-full border font-mono tracking-widest" style="border-color:var(--jade);color:var(--jade)">{{ store.roomId }}</span>
-            <button @click="copyRoomId" class="text-xs px-2 py-1 rounded border" style="border-color:rgba(255,255,255,0.15);opacity:0.6">{{ copied?'✓':'复制' }}</button>
-            <button @click="shareRoom" class="text-xs px-2 py-1 rounded border" style="border-color:rgba(212,168,67,0.4);color:var(--gold)">🔗 分享</button>
-            <button @click="backToHome" class="text-xs px-2 py-1 rounded border opacity-50 hover:opacity-100" style="border-color:rgba(255,255,255,0.15)">← 退出</button>
+            <button @click="playClickSound(); copyRoomId()" class="text-xs px-2 py-1 rounded border" style="border-color:rgba(255,255,255,0.15);opacity:0.6">{{ copied?'✓':'复制' }}</button>
+            <button @click="playClickSound(); shareRoom()" class="text-xs px-2 py-1 rounded border" style="border-color:rgba(212,168,67,0.4);color:var(--gold)">🔗 分享</button>
+            <button @click="playClickSound(); backToHome()" class="text-xs px-2 py-1 rounded border opacity-50 hover:opacity-100" style="border-color:rgba(255,255,255,0.15)">← 退出</button>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-3 mb-5">
@@ -79,7 +79,7 @@
                 </p>
                 <p class="text-xs mt-0.5" :style="getPlayer(i-1)!.isReady?'color:var(--jade)':'color:var(--ink-light)'">{{ getPlayer(i-1)!.isReady?'✓ 已准备':'等待中...' }}</p>
               </div>
-              <button v-if="isHost && getPlayer(i-1)!.id!==store.myId" @click="kick(getPlayer(i-1)!.id)"
+              <button v-if="isHost && getPlayer(i-1)!.id!==store.myId" @click="playClickSound(); kick(getPlayer(i-1)!.id)"
                 class="text-xs px-1.5 py-0.5 rounded border opacity-40 hover:opacity-100"
                 style="border-color:rgba(255,80,80,0.4);color:#ff6060">✕</button>
             </template>
@@ -89,16 +89,16 @@
           </div>
         </div>
         <div v-if="isHost" class="flex gap-2 mb-4">
-          <button @click="store.addAI()" :disabled="(store.room?.players.length??0)>=4"
+          <button @click="playClickSound(); store.addAI()" :disabled="(store.room?.players.length??0)>=4"
             class="flex-1 py-1.5 rounded-lg border text-xs font-semibold tracking-wider transition-all"
             :class="(store.room?.players.length??0)>=4?'opacity-20 cursor-not-allowed border-white/10':'border-yellow-700/40 text-yellow-400 hover:bg-yellow-900/20'">+ 添加AI</button>
-          <button @click="store.hostStart()" :disabled="(store.room?.players.length??0)<2"
+          <button @click="playClickSound(); store.hostStart()" :disabled="(store.room?.players.length??0)<2"
             class="flex-1 py-1.5 rounded-lg border text-xs font-semibold tracking-wider transition-all"
             :class="(store.room?.players.length??0)<2?'opacity-20 cursor-not-allowed border-white/10':'border-green-600/50 text-green-400 hover:bg-green-900/10'">⚔ 强制开局</button>
         </div>
         <p class="text-center text-xs mb-4 tracking-widest opacity-40">{{ store.room?.players.length??0 }} / 4 位豪客 · 全员准备后自动开局</p>
         <div class="text-center">
-          <button v-if="!store.me?.isReady" @click="store.ready()" class="btn-gold px-12">准备开局</button>
+          <button v-if="!store.me?.isReady" @click="playClickSound(); store.ready()" class="btn-gold px-12">准备开局</button>
           <p v-else class="text-sm tracking-widest" style="color:var(--jade)">✓ 已准备，候客中...</p>
         </div>
       </div>
@@ -114,21 +114,21 @@
           <div class="flex items-center justify-between mb-4">
             <h2 class="font-bold tracking-widest text-sm" style="color:var(--gold)">🏮 汴京酒肆列表</h2>
             <div class="flex items-center gap-2">
-              <button @click="fetchRooms" class="text-xs opacity-40 hover:opacity-80" :class="roomListLoading?'animate-spin':''" title="刷新">↺</button>
-              <button @click="showRoomList=false" class="text-xs opacity-40 hover:opacity-100 text-lg">✕</button>
+              <button @click="playClickSound(); fetchRooms()" class="text-xs opacity-40 hover:opacity-80" :class="roomListLoading?'animate-spin':''" title="刷新">↺</button>
+              <button @click="playClickSound(); showRoomList=false" class="text-xs opacity-40 hover:opacity-100 text-lg">✕</button>
             </div>
           </div>
           <div v-if="roomListLoading" class="text-center py-8 opacity-40 text-sm tracking-widest">查询中…</div>
           <div v-else-if="roomList.length===0" class="text-center py-8">
             <p class="text-3xl mb-3">🍃</p>
             <p class="text-sm opacity-40 tracking-widest">暂无开放中的酒肆</p>
-            <button @click="showRoomList=false" class="btn-gold mt-4 text-xs px-6">新开一桌</button>
+            <button @click="playClickSound(); showRoomList=false" class="btn-gold mt-4 text-xs px-6">新开一桌</button>
           </div>
           <div v-else class="space-y-2">
             <div v-for="r in roomList" :key="r.roomId"
               class="flex items-center gap-3 rounded-xl p-3 border transition-all cursor-pointer hover:border-yellow-700/50"
               :class="r.full ? 'border-white/5 opacity-60' : 'border-white/10 hover:bg-yellow-900/10'"
-              @click="quickJoin(r)"
+              @click="playClickSound(); quickJoin(r)"
             >
               <span class="text-xl flex-shrink-0">{{ r.mode==='card'?'🃏':'🎲' }}</span>
               <div class="flex-1 min-w-0">
@@ -158,6 +158,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore, type GameMode, type HistoricalCharacter, type CharacterModel, CHARACTERS } from '../stores/gameStore';
 import CharacterSelectPanel from '../components/CharacterSelectPanel.vue';
+import { playClickSound } from '../utils/useSound';
 
 const router = useRouter();
 const store  = useGameStore();
