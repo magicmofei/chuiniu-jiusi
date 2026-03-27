@@ -6,18 +6,21 @@
       <!-- 水墨大字背景 -->
       <div class="bg-char">{{ result.bidSuccess ? '真' : '谎' }}</div>
 
-      <!-- ══ 被质疑者横幅 ══ -->
+      <!-- ══ 质疑横幅：显示 质疑者 ⚔ 质疑 被质疑者（出牌者），结果在标题中体现 ══ -->
       <div class="challenger-banner">
         <span class="cb-challenger">{{ result.challengerName }}</span>
         <span class="cb-arrow">⚔ 质疑</span>
-        <span class="cb-loser" :class="isMyself ? 'cb-loser--me' : ''">
-          {{ loserName }}{{ isMyself ? '（你）' : '' }}
-        </span>
+        <span class="cb-loser">{{ result.bidderName }}</span>
       </div>
 
       <!-- 结果大标题 -->
       <p class="pop-title" :class="result.bidSuccess ? 'c-jade' : 'c-red'">
         {{ result.bidSuccess ? '叫牌成真！' : '吹牛败露！' }}
+      </p>
+      <!-- 输家说明：明确指出谁需要喝酒，避免横幅歧义 -->
+      <p class="pop-loser-hint">
+        <span :class="isMyself ? 'c-gold' : 'c-red'">{{ loserName }}{{ isMyself ? '（你）' : '' }}</span>
+        <span style="opacity:0.5"> 需要喝酒</span>
       </p>
 
       <!-- ══ 骰子模式：亮骰区 ══ -->
@@ -46,14 +49,15 @@
             <div v-else-if="activePhase==='drink'"    key="p2" class="stage-inner"><div class="emoji-wrap anim-tilt">🍶</div><p class="stage-hint">咕嘟咕嘟…</p></div>
             <div v-else-if="activePhase==='poisoned'" key="p4" class="stage-inner">
               <div class="emoji-wrap emoji-lg anim-fall">😵</div>
-              <p class="stage-label c-red">蒙汗药！昏倒！</p>
-              <p v-if="poisonQuote" class="stage-quote c-red">{{ poisonQuote }}</p>
-              <p class="stage-sub">{{ loserName }}{{ dicePunishment?.eliminated ? ' 已被淘汰！' : ' 还剩 ' + dicePunishment?.livesRemaining + ' 命' }}</p>
-            </div>
-            <div v-else-if="activePhase==='safe'"     key="p5" class="stage-inner">
-              <div class="emoji-wrap emoji-lg anim-safe">😮‍💨</div>
-              <p class="stage-label c-jade">{{ toastQuote }}</p>
-              <p class="stage-sub">{{ loserName }} 平安无事</p>
+              <p class="stage-label c-red">
+                {{ dicePunishment?.eliminated ? '蒙汗药！昏倒淘汰！' : '蒙汗药！骰子 -1！' }}
+              </p>
+              <p class="stage-sub">
+                {{ loserName }}
+                {{ dicePunishment?.eliminated
+                  ? ' 已被淘汰！'
+                  : ' 骰子剩余 ' + result.room.players.find(p => p.id === result.loserIds[0])?.diceCount + ' 个' }}
+              </p>
             </div>
           </transition>
         </div>
@@ -208,24 +212,15 @@ function tryClose() { if (canClose.value) emit('close'); }
 
 // ── 骰子模式动画 ──────────────────────────────────────────
 function runDiceAnim() {
-  const poi = (props.result as any).punishment.livesLost > 0;
+  // 骰子模式：每次受罚都喝蒙汗药（骰子 -1），livesLost>0 代表骰子归零扣命/淘汰
+  const punishment = (props.result as any).punishment as { livesLost: number; livesRemaining: number; eliminated: boolean };
   setTimeout(() => { phase.value = 'lift'; },  400);
   setTimeout(() => { phase.value = 'drink'; playDrinkSound(); }, 1100);
   setTimeout(async () => {
-    phase.value = poi ? 'poisoned' : 'safe';
-    if (poi) {
-      inkSplash();
-      canClose.value = true;
-    } else {
-      const q = getToastQuote(loserCharacterId.value);
-      toastQuote.value = q.text;
-      toastAudioSrc.value = q.audio;
-      fireConfetti();
-      store.voicePlaying = true;
-      await playToastAudio(q.audio);
-      store.voiceEnded();
-      canClose.value = true;
-    }
+    // 骰子模式每次受罚必然喝下蒙汗药（骰子-1），始终显示惩罚动画
+    phase.value = 'poisoned';
+    inkSplash();
+    canClose.value = true;
   }, 2000);
 }
 
@@ -460,6 +455,13 @@ onUnmounted(() => {});
   letter-spacing: .15em;
   text-align: center;
   margin-bottom: 0.2rem;
+}
+.pop-loser-hint {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.5rem;
 }
 .pop-hint {
   font-size: .7rem;

@@ -20,7 +20,7 @@
       <div class="top-bar__right">
         <span :style="{color:store.connected?'var(--jade)':'var(--vermillion)'}">{{ store.connected?'●':'○' }}</span>
         <button @click="playClickSound(); soundEnabled=!soundEnabled" class="icon-btn">{{ soundEnabled?'🔊':'🔇' }}</button>
-        <button v-if="store.phase!=='gameOver'" @click="playClickSound(); confirmLeave()" class="leave-btn">离开</button>
+        <button v-if="store.phase!=='gameOver' && store.phase!=='waiting'" @click="playClickSound(); confirmLeave()" class="leave-btn">离开</button>
       </div>
     </header>
 
@@ -81,8 +81,25 @@
             <p class="gameover-title">{{ store.room?.winner }} 荣登酒霸！</p>
             <p style="opacity:0.4;font-size:0.65rem;margin:0.2rem 0 0.6rem">共 {{ store.room?.round }} 回合</p>
             <div class="gameover-btns">
+              <button v-if="!store.isSpectator" @click="playClickSound(); requestRestart()" class="btn-restart" :disabled="store.restartRequested">{{ store.restartRequested ? '等待中…' : '再来一局' }}</button>
               <button @click="playClickSound(); backToLobby()" class="btn-gold" style="font-size:0.78rem;padding:0.4rem 1rem">返回酒肆</button>
               <button @click="playClickSound(); downloadReplay()" class="btn-gold" style="font-size:0.7rem;padding:0.4rem 0.8rem">💾 录像</button>
+            </div>
+          </div>
+          <!-- 再来一局：等待房间内玩家准备 -->
+          <div v-if="store.phase==='waiting' && store.roomId" class="gameover-card bounce-in">
+            <p style="font-size:1.6rem">🍶</p>
+            <p class="gameover-title" style="font-size:0.9rem">新一局，等待豪客准备</p>
+            <div class="restart-seats">
+              <div v-for="p in store.room?.players" :key="p.id" class="restart-seat-pill" :class="p.isReady ? 'ready' : 'waiting'">
+                <span>{{ p.name }}</span><span class="restart-seat-status">{{ p.isReady ? '✓' : '…' }}</span>
+              </div>
+            </div>
+            <div class="gameover-btns" style="margin-top:0.5rem">
+              <button v-if="!store.isSpectator && !store.me?.isReady" @click="playClickSound(); store.ready()" class="btn-gold" style="font-size:0.78rem;padding:0.4rem 1.2rem">准备开局</button>
+              <p v-else-if="!store.isSpectator" style="font-size:0.72rem;color:var(--jade);letter-spacing:0.1em">✓ 等待其他人…</p>
+              <button v-if="isHost" @click="playClickSound(); store.hostStart()" :disabled="(store.room?.players.length??0)<2" class="btn-gold" style="font-size:0.72rem;padding:0.4rem 0.8rem">⚔ 强制开局</button>
+              <button @click="playClickSound(); backToLobby()" class="btn-leave-sm">离开</button>
             </div>
           </div>
         </div>
@@ -171,6 +188,17 @@
 
     <DealingOverlay v-if="showDealing && store.room" :players="store.room.players" :my-id="store.myId" :total-cards="5" @done="showDealing=false" />
     <PunishmentModal v-if="store.showPunishment && store.challengeResult" :result="store.challengeResult" @close="store.closePunishment()" />
+    <!-- 轮到你了 全屏提示 -->
+    <transition name="your-turn">
+      <div v-if="yourTurnFlash && !store.isSpectator" class="your-turn-flash" @click="yourTurnFlash=false">
+        <div class="ytf-inner">
+          <span class="ytf-deco">⚔</span>
+          <span class="ytf-text">轮到你了！</span>
+          <span class="ytf-deco">⚔</span>
+        </div>
+      </div>
+    </transition>
+
     <!-- 质疑打断横幅 -->
     <transition name="challenge-flash">
       <div v-if="challengeFlash" class="challenge-flash-banner">
@@ -388,6 +416,20 @@ function showChallengeFlash(text: string, duration = 1400) {
   challengeFlashTimer = setTimeout(() => { challengeFlash.value = null; }, duration);
 }
 
+// ── 轮到你了 提示 ─────────────────────────────────────────
+const yourTurnFlash = ref(false);
+let yourTurnTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(() => store.isMyTurn, (isMyTurn) => {
+  if (!isMyTurn || store.isSpectator) return;
+  if (store.phase !== 'bidding') return;
+  yourTurnFlash.value = true;
+  if (yourTurnTimer) clearTimeout(yourTurnTimer);
+  yourTurnTimer = setTimeout(() => { yourTurnFlash.value = false; }, 2200);
+  // 用点击音效作为轮到自己的提示音
+  if (soundEnabled.value) playClickSound();
+});
+
 watch(soundEnabled, v => {
   localStorage.setItem('chuiniu_sound', v ? 'on' : 'off');
   // 静音时暂停游戏BGM，开启时若BGM已启动则恢复播放
@@ -405,9 +447,13 @@ watch(() => store.room?.round, (newRound, oldRound) => {
     startGameBgm();
   }
 });
-watch(() => store.phase, (p) => {
+watch(() => store.phase, (p, prev) => {
   if (p === 'gameOver') {
     stopGameBgm();
+  }
+  // 再来一局：重新开始时恢复BGM
+  if ((p === 'rolling' || p === 'bidding') && prev === 'waiting') {
+    startGameBgm();
   }
 });
 watch(() => store.challengeResult, (result) => {
@@ -496,6 +542,11 @@ function onChallenge() {
   store.gameMode === 'dice' ? store.diceChallenge() : store.cardChallenge();
 }
 // onCardPlay removed – replaced by onCardPlayWithRects for fly animation
+const isHost = computed(() => store.room?.hostId === store.myId);
+function requestRestart() {
+  playClickSound();
+  store.restart();
+}
 function backToLobby() { stopGameBgm(); store.disconnect(); router.push('/'); }
 function confirmLeave() {
   if (store.phase === 'waiting' || store.phase === 'gameOver') {
@@ -693,6 +744,79 @@ onMounted(() => {
 .gameover-title { font-size: 1rem; font-weight: 700; letter-spacing: 0.15em; color: var(--gold); }
 .gameover-btns { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; margin-top: 0.3rem; }
 
+/* 再来一局按钮 */
+.btn-restart {
+  font-size: 0.8rem;
+  padding: 0.42rem 1.1rem;
+  border-radius: 0.5rem;
+  border: 1.5px solid rgba(78,200,120,0.6);
+  background: rgba(78,200,120,0.12);
+  color: #5de89e;
+  font-family: inherit;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-restart:hover:not(:disabled) {
+  background: rgba(78,200,120,0.22);
+  border-color: rgba(78,200,120,0.85);
+  box-shadow: 0 0 12px rgba(78,200,120,0.25);
+}
+.btn-restart:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 再来一局等待席位 */
+.restart-seats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: center;
+  margin: 0.5rem 0 0.2rem;
+}
+.restart-seat-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 99px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  border: 1px solid;
+  transition: all 0.3s;
+}
+.restart-seat-pill.ready {
+  border-color: rgba(78,200,120,0.5);
+  background: rgba(78,200,120,0.1);
+  color: #5de89e;
+}
+.restart-seat-pill.waiting {
+  border-color: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.45);
+}
+.restart-seat-status {
+  font-size: 0.75rem;
+}
+
+/* 小型离开按钮 */
+.btn-leave-sm {
+  font-size: 0.68rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: none;
+  color: rgba(255,255,255,0.4);
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-leave-sm:hover { color: rgba(255,255,255,0.75); border-color: rgba(255,255,255,0.3); }
+
+
 /* ── 空座位 ── */
 .empty-seat {
   display: flex; align-items: center; justify-content: center;
@@ -885,4 +1009,73 @@ onMounted(() => {
 .bid-leave-to   { opacity:0; transform:translateY(6px); }
 .toast-enter-active, .toast-leave-active { transition: all 0.3s ease; }
 .toast-enter-from, .toast-leave-to { opacity:0; transform: translate(-50%,16px); }
+
+/* ── 轮到你了 全屏提示 ── */
+.your-turn-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  background: radial-gradient(ellipse at center, rgba(212,168,67,0.18) 0%, transparent 70%);
+}
+.ytf-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.9rem 2.2rem;
+  background: rgba(10,8,4,0.88);
+  border: 2px solid rgba(212,168,67,0.7);
+  border-radius: 1rem;
+  box-shadow:
+    0 0 40px rgba(212,168,67,0.25),
+    0 8px 40px rgba(0,0,0,0.7),
+    inset 0 1px 0 rgba(212,168,67,0.2);
+  backdrop-filter: blur(16px);
+  animation: ytfPulse 0.6s ease-out;
+}
+@keyframes ytfPulse {
+  0%   { transform: scale(0.75); opacity: 0; }
+  60%  { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+.ytf-text {
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  color: var(--gold);
+  text-shadow:
+    0 0 20px rgba(212,168,67,0.8),
+    0 0 40px rgba(212,168,67,0.4);
+  white-space: nowrap;
+  animation: ytfTextShimmer 1.8s ease-in-out infinite;
+}
+@keyframes ytfTextShimmer {
+  0%,100% { text-shadow: 0 0 20px rgba(212,168,67,0.8), 0 0 40px rgba(212,168,67,0.4); }
+  50%      { text-shadow: 0 0 32px rgba(212,168,67,1),   0 0 60px rgba(212,168,67,0.6); }
+}
+.ytf-deco {
+  font-size: 1.1rem;
+  color: var(--gold);
+  opacity: 0.7;
+  animation: ytfDecoSpin 3s linear infinite;
+}
+@keyframes ytfDecoSpin {
+  0%   { transform: rotate(0deg)   scale(1); }
+  25%  { transform: rotate(15deg)  scale(1.1); }
+  75%  { transform: rotate(-15deg) scale(1.1); }
+  100% { transform: rotate(0deg)   scale(1); }
+}
+.your-turn-enter-active { animation: ytfIn 0.3s cubic-bezier(0.34,1.4,0.64,1); }
+.your-turn-leave-active { animation: ytfOut 0.35s ease; }
+@keyframes ytfIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes ytfOut {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(1.05); }
+}
 </style> 

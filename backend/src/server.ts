@@ -573,6 +573,18 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     if (firstPlayer?.isAI) scheduleAIAction(res.roomId);
   });
 
+  // ── 再来一局 ─────────────────────────────────────────────
+  socket.on('room:restart', (cb) => {
+    const res = rm.resetRoom(socket.id);
+    if (!res.success || !res.roomId) { cb({ success: false, error: res.error }); return; }
+    cb({ success: true });
+    const room = rm.getRoom(res.roomId)!;
+    const view = rm.toPublicView(room);
+    io.to(res.roomId).emit('room:restarted', view);
+    io.to(res.roomId).emit('room:update', view);
+    console.log(`[再来一局] 房间 ${res.roomId} 重置，等待玩家准备`);
+  });
+
   // ── 聊天 ─────────────────────────────────────────────────
   socket.on('chat:send', (data: { text: string; type: string }) => {
     const room = rm.getRoomBySocket(socket.id);

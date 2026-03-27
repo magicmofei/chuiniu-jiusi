@@ -368,6 +368,49 @@ export class RoomManager {
     return { roomId };
   }
 
+  // ── 再来一局：重置房间到 waiting 状态 ────────────────────
+  resetRoom(
+    hostSocketId: string
+  ): { success: boolean; roomId?: string; error?: string } {
+    const roomId = this.socketRoom.get(hostSocketId);
+    if (!roomId) return { success: false, error: '你不在房间中' };
+    const room = this.rooms.get(roomId);
+    if (!room) return { success: false, error: '房间不存在' };
+    if (room.phase !== 'gameOver') return { success: false, error: '游戏尚未结束' };
+
+    // 清除旧引擎
+    this.engines.delete(roomId);
+
+    // 重置房间状态，保留玩家列表和房主
+    room.phase = 'waiting';
+    room.round = 0;
+    room.currentPlayerIndex = 0;
+    room.currentDiceBid = null;
+    room.currentCardBid = null;
+    room.targetCard = null;
+    room.cardBidHistory = [];
+    room.winner = null;
+    room.eliminatedPlayerIds = [];
+    room.roulette = null;
+    room.pickingPlayerId = null;
+    room.lastPunishment = null;
+
+    // 重置所有玩家状态（移除已淘汰的AI，保留真实玩家）
+    room.players = room.players.filter(p => !p.isAI || p.isConnected);
+    for (const p of room.players) {
+      p.isReady = p.isAI; // AI 自动准备，真实玩家需重新准备
+      p.lives = INITIAL_LIVES;
+      p.diceCount = INITIAL_DICE;
+      p.dice = [];
+      p.hand = [];
+      p.bottles = createBottleState();
+      p.disconnectedAt = null;
+    }
+
+    (room as any)._lastActiveAt = Date.now();
+    return { success: true, roomId };
+  }
+
   // ── 强制移除（游戏结束后清理）────────────────────────────
   removePlayer(socketId: string): { roomId: string | null } {
     const roomId = this.socketRoom.get(socketId);

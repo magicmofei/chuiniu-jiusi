@@ -287,6 +287,7 @@ export interface ServerToClientEvents {
   'game:stateUpdate': (room: RoomPublicView) => void;
   'game:roundStart': (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardValue[] }) => void;
   'game:over': (data: { winner: string; room: RoomPublicView }) => void;
+  'room:restarted': (room: RoomPublicView) => void;
   // v2.0 开场名言序列（游戏开始时推送，前端依次播放）
   'game:openingQuotes': (quotes: OpeningQuoteItem[]) => void;
   'player:call': (bid: DiceBid | Omit<CardBid, 'actualCards'>) => void;
@@ -317,6 +318,9 @@ export interface ClientToServerEvents {
     cb: (res: { success: boolean; error?: string }) => void
   ) => void;
   'room:hostStart': (
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  'room:restart': (
     cb: (res: { success: boolean; error?: string }) => void
   ) => void;
   'room:join': (

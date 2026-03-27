@@ -394,6 +394,22 @@ export const useGameStore = defineStore('game', () => {
       replay.push('gameOver', data);
       addLog(`🏆 游戏结束！酒霸：${data.winner}`);
     });
+    s.on('room:restarted', (r: RoomPublicView) => {
+      room.value = r;
+      gameMode.value = r.mode;
+      myDice.value = [];
+      myHand.value = [];
+      challengeResult.value = null;
+      showPunishment.value = false;
+      bottlePickPrompt.value = null;
+      pendingBottlePick.value = null;
+      pendingRoundStart.value = null;
+      tableCardStacks.value = [];
+      pendingOpponentPlay.value = null;
+      winnerBanner.value = false;
+      restartRequested.value = false;
+      addLog('── 新一局开始，等待豪客准备 ──');
+    });
     s.on('player:left', (pid: string) => {
       const p = room.value?.players.find(p => p.id === pid);
       addLog(`${p?.name ?? pid} 离开了酒肆`);
@@ -406,6 +422,9 @@ export const useGameStore = defineStore('game', () => {
       if (chatMessages.value.length > 100) chatMessages.value.shift();
     });
   }
+
+  // 再来一局状态
+  const restartRequested = ref(false);
 
   function spectate(name: string, avatar: string, targetRoomId: string) {
     myName.value = name; myAvatar.value = avatar; isSpectator.value = true;
@@ -518,6 +537,12 @@ export const useGameStore = defineStore('game', () => {
   function hostStart() {
     socket.value?.emit('room:hostStart', (res: any) => { if (!res.success) errorMsg.value = res.error ?? '开始失败'; });
   }
+  function restart() {
+    restartRequested.value = true;
+    socket.value?.emit('room:restart', (res: any) => {
+      if (!res.success) { errorMsg.value = res.error ?? '重置失败'; restartRequested.value = false; }
+    });
+  }
   function sendChat(text: string, type: 'chat' | 'emoji' = 'chat') {
     if (!text.trim()) return; socket.value?.emit('chat:send', { text, type });
   }
@@ -612,7 +637,8 @@ export const useGameStore = defineStore('game', () => {
     diceBid, diceChallenge, cardPlay, cardChallenge, pickBottle,
     sendChat, reconnect, disconnect,
     clearError, closePunishment, voiceEnded, setOpeningQuote,
-    kickPlayer, addAI, hostStart,
+    kickPlayer, addAI, hostStart, restart,
+    restartRequested,
   };
 });
  

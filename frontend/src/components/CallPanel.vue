@@ -1,7 +1,12 @@
 <template>
-  <div class="card-ink p-4">
-    <p class="text-xs tracking-widest opacity-40 mb-3">
-      {{ isMyTurn ? '✦ 轮到你了 · 吹一波？' : `等待 ${currentPlayerName} 喊话...` }}
+  <div class="card-ink p-4" :class="isMyTurn && 'panel--my-turn'">
+    <div v-if="isMyTurn" class="my-turn-header">
+      <span class="my-turn-dot"></span>
+      <span class="my-turn-text">轮到你了！</span>
+      <span class="my-turn-dot"></span>
+    </div>
+    <p v-else class="text-xs tracking-widest opacity-40 mb-3">
+      等待 {{ currentPlayerName }} 喊话...
     </p>
 
     <!-- 骰子模式叫牌 -->
@@ -94,3 +99,54 @@ function submitDiceBid() {
   qty.value += 1;
 }
 </script>
+
+<style scoped>
+.panel--my-turn {
+  border: 1.5px solid rgba(212,168,67,0.55);
+  background: rgba(212,168,67,0.06);
+  border-radius: 0.75rem;
+  animation: panelGlow 2s ease-in-out infinite;
+}
+@keyframes panelGlow {
+  0%,100% { box-shadow: 0 0 0 0 rgba(212,168,67,0.2); }
+  50%      { box-shadow: 0 0 18px 4px rgba(212,168,67,0.18); }
+}
+
+.my-turn-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  animation: headerSlideIn 0.35s cubic-bezier(0.34,1.4,0.64,1);
+}
+@keyframes headerSlideIn {
+  from { opacity: 0; transform: translateY(-8px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.my-turn-text {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+  color: var(--gold);
+  text-shadow: 0 0 12px rgba(212,168,67,0.6);
+  animation: textPulse 1.8s ease-in-out infinite;
+}
+@keyframes textPulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.75; }
+}
+
+.my-turn-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: dotPulse 1.8s ease-in-out infinite;
+}
+@keyframes dotPulse {
+  0%,100% { transform: scale(1); opacity: 0.8; }
+  50%      { transform: scale(1.5); opacity: 1; }
+}
+</style>
