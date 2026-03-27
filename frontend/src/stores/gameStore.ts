@@ -318,7 +318,7 @@ export const useGameStore = defineStore('game', () => {
             id: `oq-${q.playerId}-${i}`,
             playerId: 'system',
             playerName: q.characterName,
-            avatar: ({ laugh: '😄', slamTable: '👊', quote: '📜', idle: '😌' })[q.quoteAction] ?? '👤',
+            avatar: ({ laugh: '😄', slamTable: '👊', quote: '📜', idle: '😌' } as Record<string, string>)[q.quoteAction] ?? '👤',
             text: `「${q.quote}」`,
             time: Date.now(),
             type: 'system',
