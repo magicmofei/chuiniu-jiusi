@@ -127,6 +127,8 @@ export class CardGame extends GameEngine {
     if (!bid) return { error: '还没有人出牌，无法质疑' };
     const currentPlayer = this.getCurrentPlayer();
     if (!currentPlayer || currentPlayer.id !== challengerId) return { error: '还没轮到你质疑' };
+    // 不能质疑自己（质疑者必须是上家之外的其他人）
+    if (bid.playerId === challengerId) return { error: '不能质疑自己打出的牌' };
 
     this.room.phase = 'challenge';
     const target = this.room.targetCard!;
@@ -239,6 +241,9 @@ export class CardGame extends GameEngine {
 
     // 没有上家出牌时直接出牌
     if (!prev) return this.aiMakeBid(player, target);
+
+    // 不能质疑自己打出的牌，必须直接出牌
+    if (prev.playerId === playerId) return this.aiMakeBid(player, target);
 
     // 根据手里目标牌+Joker数量决定是否质疑
     const validCards = player.hand.filter(c => c === target || c === 'Joker');
