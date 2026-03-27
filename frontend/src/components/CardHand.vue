@@ -10,13 +10,15 @@
     <div class="flex flex-wrap gap-2 min-h-[7rem] items-end">
       <button
         v-for="(card, i) in hand" :key="i"
+        :ref="el => setCardRef(i, el)"
         @click="toggleSelect(i)"
-        :disabled="disabled"
+        :disabled="disabled || launching"
         class="poker-card"
         :class="[
           isSelected(i) ? 'poker-card--selected' : '',
-          disabled ? 'poker-card--disabled' : '',
+          (disabled || launching) ? 'poker-card--disabled' : '',
           card === 'Joker' ? 'poker-card--joker' : cardColor(card),
+          launching && isSelected(i) ? 'poker-card--launching' : '',
         ]"
       >
         <span class="poker-card__corner poker-card__corner--top">{{ cardCorner(card) }}</span>
@@ -32,7 +34,7 @@
     </div>
 
     <!-- 出牌控制：选中即声称，无需单独设置声称数 -->
-    <div v-if="hasSelected && !disabled" class="mt-4 flex items-center gap-3 flex-wrap slide-down">
+    <div v-if="hasSelected && !disabled && !launching" class="mt-4 flex items-center gap-3 flex-wrap slide-down">
       <span class="text-xs opacity-60">
         已选 <strong style="color:var(--gold)">{{ selected.length }}</strong> 张
         · 声称全是&nbsp;<strong style="color:var(--gold)">{{ targetCard ?? '目标牌' }}</strong>
@@ -41,7 +43,7 @@
       <button @click="selected = []" class="text-xs opacity-40 hover:opacity-70">取消</button>
     </div>
 
-    <p v-if="!hasSelected && !disabled && hand.length > 0" class="text-xs opacity-20 mt-2">
+    <p v-if="!hasSelected && !disabled && !launching && hand.length > 0" class="text-xs opacity-20 mt-2">
       点击选牌（1-{{ Math.min(3, hand.length) }} 张），选完后点「出牌！」
     </p>
   </div>
@@ -49,6 +51,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import type { ComponentPublicInstance } from 'vue';
 import type { CardValue } from '../stores/gameStore';
 
 const props = defineProps<{
@@ -58,18 +61,25 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  play: [cards: CardValue[]]
+  'play-with-rects': [payload: { cards: CardValue[]; rects: DOMRect[] }]
 }>();
 
 const selected = ref<number[]>([]);
 const hasSelected = computed(() => selected.value.length > 0);
+const launching = ref(false);
+
+// Store refs to each card button element
+const cardRefs = ref<(Element | null)[]>([]);
+function setCardRef(i: number, el: Element | ComponentPublicInstance | null) {
+  cardRefs.value[i] = el instanceof Element ? el : null;
+}
 
 function isSelected(i: number) {
   return selected.value.includes(i);
 }
 
 function toggleSelect(i: number) {
-  if (props.disabled) return;
+  if (props.disabled || launching.value) return;
   const idx = selected.value.indexOf(i);
   if (idx >= 0) {
     selected.value = selected.value.filter(x => x !== i);
@@ -79,10 +89,20 @@ function toggleSelect(i: number) {
 }
 
 function playCards() {
-  if (selected.value.length === 0) return;
+  if (selected.value.length === 0 || launching.value) return;
   const cards = selected.value.map(i => props.hand[i]);
-  emit('play', cards);
-  selected.value = [];
+  // Collect bounding rects of selected card elements
+  const rects = selected.value.map(i => {
+    const el = cardRefs.value[i];
+    return el ? el.getBoundingClientRect() : new DOMRect();
+  });
+  launching.value = true;
+  emit('play-with-rects', { cards, rects });
+  // Reset after animation completes (parent will call store.cardPlay after ~500ms)
+  setTimeout(() => {
+    selected.value = [];
+    launching.value = false;
+  }, 600);
 }
 
 function cardColor(card: CardValue) {
@@ -94,6 +114,8 @@ function cardCorner(card: CardValue) {
   return card === 'Joker' ? '★' : card;
 }
 </script>
+
+
 
 <style scoped>
 .poker-card {
@@ -123,6 +145,12 @@ function cardCorner(card: CardValue) {
 .poker-card--disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+.poker-card--launching {
+  opacity: 0 !important;
+  transform: translateY(-20px) scale(0.85) !important;
+  transition: opacity 0.3s ease, transform 0.3s ease !important;
+  pointer-events: none;
 }
 /* A 牌：深红 */
 .poker-card--ace .poker-card__corner,

@@ -163,6 +163,9 @@ export const useGameStore = defineStore('game', () => {
   interface TableStack { playerId: string; playerName: string; count: number; }
   const tableCardStacks = ref<TableStack[]>([]);
 
+  // 对手出牌飞入通知：Table.vue 监听此 ref，触发飞入动画后再 push 到 tableCardStacks
+  const pendingOpponentPlay = ref<TableStack | null>(null);
+
   // v2.0 角色 & 开场名言
   const selectedCharacter    = ref<HistoricalCharacter | null>(null);
   const openingQuotes        = ref<OpeningQuoteItem[]>([]);
@@ -182,10 +185,25 @@ export const useGameStore = defineStore('game', () => {
   const pendingBottlePick = ref<{ loserId: string; loserName: string; bottleIndex: number } | null>(null);
   // 缓存：若惩罚弹窗还在显示时收到 roundStart，先缓存，关弹窗后再应用
   const pendingRoundStart = ref<{ room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardValue[] } | null>(null);
+  // 语音播放锁：角色说祝酒词期间为 true，期间暂停所有回合推进和 AI 行动
+  const voicePlaying = ref(false);
 
   function addLog(msg: string) {
-    gameLog.value.unshift(`[${new Date().toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}] ${msg}`);
+    const timeStr = new Date().toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const text = `[${timeStr}] ${msg}`;
+    gameLog.value.unshift(text);
     if (gameLog.value.length > 50) gameLog.value.pop();
+    // 同时推入统一聊天流，带真实时间戳，方便按时间排序合并
+    chatMessages.value.push({
+      id: `log-${Date.now()}-${Math.random()}`,
+      playerId: '__log__',
+      playerName: '',
+      avatar: '📜',
+      text,
+      time: Date.now(),
+      type: 'system',
+    });
+    if (chatMessages.value.length > 120) chatMessages.value.shift();
   }
 
   const phase = computed(() => room.value?.phase ?? 'waiting');
@@ -206,13 +224,21 @@ export const useGameStore = defineStore('game', () => {
     s.on('error', (msg: string) => { errorMsg.value = msg; });
     s.on('room:update', (r: RoomPublicView) => { room.value = r; gameMode.value = r.mode; });
     s.on('game:stateUpdate', (r: RoomPublicView) => {
+      // 语音播放期间：暂停所有状态推进，等语音结束后再处理
+      if (voicePlaying.value) return;
       // 惩罚弹窗显示期间：仅允许 gameOver / punishment / result 相态更新通过
       // bidding 阶段也需通过，否则 AI 行动后的状态会被丢弃导致卡死
       if (showPunishment.value && r.phase !== 'gameOver' && r.phase !== 'bidding' && r.phase !== 'result') return;
       const prevDiceBid = room.value?.currentDiceBid;
       const prevCardBid = room.value?.currentCardBid;
       const prevPhase   = room.value?.phase;
+      const prevRound   = room.value?.round;
       room.value = r;
+      // 回合号增加时清空台面牌堆，防止跨局累积
+      if (prevRound !== undefined && r.round !== prevRound) {
+        tableCardStacks.value = [];
+        pendingOpponentPlay.value = null;
+      }
       // 等待操作时在日志中明确流程
       if (r.phase === 'bidding' && prevPhase !== 'bidding') {
         const cur = r.players[r.currentPlayerIndex];
@@ -224,11 +250,12 @@ export const useGameStore = defineStore('game', () => {
         const isNew = !prevCardBid || prevCardBid.playerId !== bid.playerId ||
           prevCardBid.quantity !== bid.quantity;
         if (isNew && bid.playerId !== myId.value) {
-          tableCardStacks.value.push({
+          // 不直接 push，改为通知 Table.vue 播放飞入动画后再 push
+          pendingOpponentPlay.value = {
             playerId: bid.playerId,
             playerName: bid.playerName,
             count: bid.quantity,
-          });
+          };
         }
       }
       if (r.currentDiceBid && r.currentDiceBid.playerId !== myId.value) {
@@ -288,6 +315,7 @@ export const useGameStore = defineStore('game', () => {
       pendingBottlePick.value = null;
       winnerBanner.value = false;
       tableCardStacks.value = []; // 新游戏清空台面牌堆
+      pendingOpponentPlay.value = null;
       diceRolling.value = true;
       setTimeout(() => { diceRolling.value = false; }, 700);
       addLog(`第 ${data.room.round} 回合开始！`);
@@ -331,18 +359,19 @@ export const useGameStore = defineStore('game', () => {
     s.on('game:roundStart', (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardValue[] }) => {
       // 始终缓存最新的 roundStart 数据
       pendingRoundStart.value = data;
-      // 若惩罚弹窗已关闭，立即应用；否则等 closePunishment 触发
-      if (!showPunishment.value) {
+      // 语音播放或惩罚弹窗显示期间：缓存，等语音/弹窗结束后再应用
+      if (!showPunishment.value && !voicePlaying.value) {
         _applyRoundStart(data);
       } else {
-        addLog(`第 ${data.room.round} 回合准备中，等待结算弹窗关闭…`);
-        // 安全兜底：最多等待 12 秒，超时强制关闭弹窗推进回合
+        addLog(`第 ${data.room.round} 回合准备中，等待语音/结算弹窗结束…`);
+        // 安全兜底：最多等待 20 秒，超时强制推进（防止语音加载失败卡死）
         setTimeout(() => {
-          if (pendingRoundStart.value === data && showPunishment.value) {
-            addLog('弹窗超时，自动推进下一回合');
+          if (pendingRoundStart.value === data && (showPunishment.value || voicePlaying.value)) {
+            addLog('等待超时，自动推进下一回合');
+            voicePlaying.value = false;
             _applyRoundStart(data);
           }
-        }, 12000);
+        }, 20000);
       }
     });
     s.on('player:challenge', (result: ChallengeResult) => {
@@ -443,6 +472,7 @@ export const useGameStore = defineStore('game', () => {
     pendingBottlePick.value = null;
     pendingRoundStart.value = null;
     tableCardStacks.value = []; // 新回合清空台面牌堆
+    pendingOpponentPlay.value = null;
     diceRolling.value = true;
     setTimeout(() => { diceRolling.value = false; }, 700);
     addLog(`第 ${data.room.round} 回合开始`);
@@ -541,6 +571,8 @@ export const useGameStore = defineStore('game', () => {
   function clearError() { errorMsg.value = ''; }
   function closePunishment() {
     showPunishment.value = false;
+    // 语音还在播放时，不立即推进，等 voiceEnded() 来触发
+    if (voicePlaying.value) return;
     // 若已有缓存的 roundStart，立即应用
     if (pendingRoundStart.value) {
       _applyRoundStart(pendingRoundStart.value);
@@ -553,6 +585,15 @@ export const useGameStore = defineStore('game', () => {
     }
     // 若 roundStart 还没到（网络慢等），等它来时会因 showPunishment=false 而自动应用
   }
+
+  /** 语音播放结束后调用：解锁并检查是否有待处理的 roundStart */
+  function voiceEnded() {
+    voicePlaying.value = false;
+    // 弹窗已关闭且有待处理的 roundStart → 立即应用
+    if (!showPunishment.value && pendingRoundStart.value) {
+      _applyRoundStart(pendingRoundStart.value);
+    }
+  }
   function setOpeningQuote(_q: string) { /* legacy compat – handled by game:openingQuotes event */ }
 
   return {
@@ -560,15 +601,17 @@ export const useGameStore = defineStore('game', () => {
     roomId, room, challengeResult, errorMsg,
     connected, socket, showPunishment, gameMode,
     bottlePickPrompt, pendingBottlePick, pendingRoundStart,
+    pendingOpponentPlay,
     chatMessages, gameLog, diceRolling, winnerBanner,
     phase, isMyTurn, me, currentPlayer, isSpectator,
     selectedCharacter, openingQuotes, showingOpeningQuotes, currentQuoteIndex,
     tableCardStacks,
+    voicePlaying,
     selectCharacter, nextOpeningQuote, skipOpeningQuotes,
     connect, spectate, ready,
     diceBid, diceChallenge, cardPlay, cardChallenge, pickBottle,
     sendChat, reconnect, disconnect,
-    clearError, closePunishment, setOpeningQuote,
+    clearError, closePunishment, voiceEnded, setOpeningQuote,
     kickPlayer, addAI, hostStart,
   };
 });

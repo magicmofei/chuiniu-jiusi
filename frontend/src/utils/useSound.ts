@@ -133,6 +133,27 @@ export function playToastAudio(src: string): Promise<void> {
   });
 }
 
+/** 发牌音效（扑克洗牌声） */
+export function playDealingSound(): void {
+  const audio = new Audio('/audio/poker1.mp3');
+  audio.volume = 0.7;
+  audio.play().catch(() => {});
+}
+
+/** 选酒音效 */
+export function playChooseWineSound(): void {
+  const audio = new Audio('/audio/chosewine.mp3');
+  audio.volume = 0.8;
+  audio.play().catch(() => {});
+}
+
+/** 喝酒音效 */
+export function playDrinkSound(): void {
+  const audio = new Audio('/audio/drink.mp3');
+  audio.volume = 0.85;
+  audio.play().catch(() => {});
+}
+
 export const sound = {
   guzheng,
   glassCrash,

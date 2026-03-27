@@ -9,19 +9,18 @@
           class="log-entry"
           :class="entryClass(entry)"
         >
-          <!-- 战局系统记录 -->
-          <template v-if="entry.kind === 'log'">
-            <span class="log-entry__icon">📜</span>
+          <!-- 系统日志（战局事件） -->
+          <template v-if="entry.kind === 'gamelog'">
             <span class="log-entry__text log-entry__text--log">{{ entry.text }}</span>
-          </template>
-          <!-- 系统名言/开场 -->
-          <template v-else-if="entry.kind === 'system'">
-            <span class="log-entry__icon">{{ entry.avatar }}</span>
-            <span class="log-entry__text log-entry__text--system">{{ entry.playerName }}：{{ entry.text }}</span>
           </template>
           <!-- 分割线 -->
           <template v-else-if="entry.kind === 'divider'">
             <span class="log-entry__divider">{{ entry.text }}</span>
+          </template>
+          <!-- 系统角色名言 -->
+          <template v-else-if="entry.kind === 'system'">
+            <span class="log-entry__icon">{{ entry.avatar }}</span>
+            <span class="log-entry__text log-entry__text--system">{{ entry.playerName }}：{{ entry.text }}</span>
           </template>
           <!-- 用户聊天 -->
           <template v-else>
@@ -33,7 +32,7 @@
       <div v-if="!unifiedFeed.length" class="log-empty">— 静候开局 —</div>
     </div>
 
-    <!-- 快捷表情 -->
+    <!-- 快捷表情（仅非 hideInput 模式） -->
     <div v-if="!hideInput" class="unified-log__emojis">
       <button v-for="e in quickEmojis" :key="e" @click="sendEmoji(e)" class="emoji-btn">{{ e }}</button>
     </div>
@@ -64,9 +63,11 @@ const input = ref('');
 const listEl = ref<HTMLElement | null>(null);
 const quickEmojis = ['😂','🤣','😤','🤡','💀','🍶','👀','🫣','😱','🎉'];
 
+type EntryKind = 'gamelog' | 'chat' | 'system' | 'divider';
+
 interface FeedEntry {
   id: string;
-  kind: 'log' | 'chat' | 'system' | 'divider';
+  kind: EntryKind;
   text: string;
   playerName?: string;
   avatar?: string;
@@ -74,49 +75,48 @@ interface FeedEntry {
   time: number;
 }
 
+// 统一时间流：所有消息（系统日志 + 聊天 + 名言）按 time 升序排列
 const unifiedFeed = computed<FeedEntry[]>(() => {
-  const items: FeedEntry[] = [];
-
-  // Game log entries — assign synthetic timestamps (newest first → reverse)
-  const logs = [...store.gameLog].reverse();
-  logs.forEach((entry, i) => {
-    items.push({
-      id: `log-${i}-${entry}`,
-      kind: 'log',
-      text: entry,
-      time: i, // relative ordering
-    });
-  });
-
-  // Chat messages
-  store.chatMessages.forEach(msg => {
-    if (msg.text.startsWith('──')) {
-      items.push({ id: msg.id, kind: 'divider', text: msg.text, time: msg.time });
-    } else if (msg.playerId === 'system') {
-      items.push({
-        id: msg.id, kind: 'system',
-        text: msg.text, playerName: msg.playerName,
-        avatar: msg.avatar, time: msg.time,
-      });
-    } else {
-      items.push({
-        id: msg.id, kind: 'chat',
-        text: msg.text, playerName: msg.playerName,
+  return store.chatMessages
+    .map(msg => {
+      if (msg.playerId === '__log__') {
+        return {
+          id: msg.id,
+          kind: 'gamelog' as EntryKind,
+          text: msg.text,
+          time: msg.time,
+        };
+      }
+      if (msg.text.startsWith('──')) {
+        return { id: msg.id, kind: 'divider' as EntryKind, text: msg.text, time: msg.time };
+      }
+      if (msg.playerId === 'system') {
+        return {
+          id: msg.id,
+          kind: 'system' as EntryKind,
+          text: msg.text,
+          playerName: msg.playerName,
+          avatar: msg.avatar,
+          time: msg.time,
+        };
+      }
+      return {
+        id: msg.id,
+        kind: 'chat' as EntryKind,
+        text: msg.text,
+        playerName: msg.playerName,
         isSelf: msg.playerId === store.myId,
         time: msg.time,
-      });
-    }
-  });
-
-  // Sort by time ascending so newest is at bottom
-  items.sort((a, b) => a.time - b.time);
-  return items.slice(-80); // cap at 80 entries
+      };
+    })
+    .sort((a, b) => a.time - b.time)
+    .slice(-100);
 });
 
 function entryClass(entry: FeedEntry) {
   if (entry.kind === 'divider') return 'log-entry--divider';
   if (entry.kind === 'system') return 'log-entry--system';
-  if (entry.kind === 'log') return 'log-entry--log';
+  if (entry.kind === 'gamelog') return 'log-entry--log';
   return entry.isSelf ? 'log-entry--self' : 'log-entry--other';
 }
 
@@ -170,14 +170,14 @@ watch(() => unifiedFeed.value.length, async () => {
 
 .log-entry__icon {
   font-size: 0.65rem;
-  opacity: 0.5;
+  opacity: 0.55;
   flex-shrink: 0;
 }
 
-/* 战局记录：棕色 */
-.log-entry__text--log {
-  color: #a07848;
-  opacity: 0.85;
+/* 战局系统日志：棕灰色，低调 */
+.log-entry--log .log-entry__text--log {
+  color: #8a6840;
+  opacity: 0.8;
 }
 
 /* 聊天他人：金黄 */
@@ -185,15 +185,15 @@ watch(() => unifiedFeed.value.length, async () => {
   color: #d4b060;
 }
 
-/* 聊天自己：亮金 */
+/* 聊天自己：亮金加粗 */
 .log-entry__text--self {
   color: #f0c84a;
   font-weight: 600;
 }
 
-/* 系统引言：淡金斜体 */
+/* 系统角色名言：淡金斜体 */
 .log-entry__text--system {
-  color: rgba(212,168,67,0.6);
+  color: rgba(212,168,67,0.65);
   font-style: italic;
 }
 
@@ -202,7 +202,7 @@ watch(() => unifiedFeed.value.length, async () => {
   color: rgba(180,140,80,0.7);
   font-size: 0.68rem;
 }
-.log-entry__name--self { color: rgba(240,200,74,0.8); }
+.log-entry__name--self { color: rgba(240,200,74,0.85); }
 
 .log-entry--divider {
   justify-content: center;
@@ -215,10 +215,10 @@ watch(() => unifiedFeed.value.length, async () => {
 }
 
 .log-entry--system {
-  padding: 0.2rem 0.4rem;
+  padding: 0.18rem 0.4rem;
   border-radius: 0.3rem;
   background: rgba(212,168,67,0.05);
-  border-left: 1.5px solid rgba(212,168,67,0.25);
+  border-left: 1.5px solid rgba(212,168,67,0.22);
 }
 
 .log-empty {

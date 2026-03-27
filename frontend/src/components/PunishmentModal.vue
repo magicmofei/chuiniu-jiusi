@@ -146,7 +146,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import type { ChallengeResult } from '../stores/gameStore';
 import { useGameStore } from '../stores/gameStore';
-import { sound, playToastAudio } from '../utils/useSound';
+import { sound, playToastAudio, playChooseWineSound, playDrinkSound } from '../utils/useSound';
 import { inkSplash, fireConfetti } from '../utils/useConfetti';
 import { getToastQuote } from '../utils/toastQuotes';
 
@@ -218,7 +218,9 @@ function runDiceAnim() {
       toastQuote.value = q.text;
       toastAudioSrc.value = q.audio;
       sound.guzheng(); fireConfetti();
+      store.voicePlaying = true;
       await playToastAudio(q.audio);
+      store.voiceEnded();
       canClose.value = true;
     }
   }, 2000);
@@ -255,7 +257,7 @@ function startDrinkAnim(poi: boolean | null) {
   bottlePhase.value = 'drinking';
   phase.value = 'idle';
   setTimeout(() => { phase.value = 'lift';  sound.bidConfirm(); }, 300);
-  setTimeout(() => { phase.value = 'drink'; sound.glassCrash(); }, 1100);
+  setTimeout(() => { phase.value = 'drink'; sound.glassCrash(); playDrinkSound(); }, 1100);
   setTimeout(() => {
     phase.value = 'reveal';
     if (poi !== null) {
@@ -276,7 +278,9 @@ async function showFinalResult(poi: boolean) {
     toastQuote.value = q.text;
     toastAudioSrc.value = q.audio;
     sound.guzheng(); fireConfetti();
+    store.voicePlaying = true;
     await playToastAudio(q.audio);
+    store.voiceEnded();
     canClose.value = true;
   }
 }
@@ -309,6 +313,7 @@ function enterPickPhase(bottles: number[]) {
   bottlePhase.value = 'poisoning';
   setTimeout(() => {
     bottlePhase.value = 'pick';
+    playChooseWineSound();
     startShuffle(bottles);
   }, 1600);
 }

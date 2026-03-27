@@ -40,6 +40,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
+import { playDealingSound } from '../utils/useSound';
 
 const props = defineProps<{
   players: { id: string; name: string }[];
@@ -72,6 +73,7 @@ let dealTimer: ReturnType<typeof setInterval>;
 let hideTimer: ReturnType<typeof setTimeout>;
 
 onMounted(() => {
+  playDealingSound();
   const n = props.players.length;
   const total = props.totalCards;
   // 逐张发牌：每张间隔 200ms，按 player0-card1, player1-card1 … player0-card2 … 顺序

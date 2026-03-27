@@ -28,7 +28,7 @@
     <div class="mahjong-layout">
 
       <!-- 上方对面玩家 -->
-      <div class="seat-top">
+      <div class="seat-top" ref="seatTopRef">
         <MiniSeat v-if="seats.top" :player="seats.top" :is-me="seats.top.id===store.myId" :is-current="isCurrentPlayer(seats.top.id)" orientation="top" :bottle-count="store.room?.bottleRemaining?.[seats.top.id]" />
         <div v-else class="empty-seat empty-seat--top">🪑</div>
       </div>
@@ -37,7 +37,7 @@
       <div class="middle-row">
 
         <!-- 左侧玩家 -->
-        <div class="seat-left">
+        <div class="seat-left" ref="seatLeftRef">
           <MiniSeat v-if="seats.left" :player="seats.left" :is-me="seats.left.id===store.myId" :is-current="isCurrentPlayer(seats.left.id)" orientation="left" :bottle-count="store.room?.bottleRemaining?.[seats.left.id]" />
           <div v-else class="empty-seat empty-seat--side">🪑</div>
         </div>
@@ -61,6 +61,7 @@
 
           <!-- 扑克牌区 -->
           <TableArea
+            ref="tableAreaRef"
             v-if="store.gameMode==='card' && (store.tableCardStacks.length > 0 || store.challengeResult?.type==='card')"
             :stacks="store.tableCardStacks"
             :target-card="store.room?.targetCard"
@@ -87,14 +88,14 @@
         </div>
 
         <!-- 右侧玩家 -->
-        <div class="seat-right">
+        <div class="seat-right" ref="seatRightRef">
           <MiniSeat v-if="seats.right" :player="seats.right" :is-me="seats.right.id===store.myId" :is-current="isCurrentPlayer(seats.right.id)" orientation="right" :bottle-count="store.room?.bottleRemaining?.[seats.right.id]" />
           <div v-else class="empty-seat empty-seat--side">🪑</div>
         </div>
       </div>
 
       <!-- 下方自己 -->
-      <div class="seat-bottom">
+      <div class="seat-bottom" ref="seatBottomRef">
         <MiniSeat v-if="seats.bottom" :player="seats.bottom" :is-me="seats.bottom.id===store.myId" :is-current="isCurrentPlayer(seats.bottom.id)" orientation="bottom" :bottle-count="store.room?.bottleRemaining?.[seats.bottom.id]" />
         <div v-else class="empty-seat empty-seat--bottom">🪑</div>
       </div>
@@ -108,7 +109,7 @@
         :hand="store.myHand"
         :target-card="store.room?.targetCard??null"
         :disabled="!store.isMyTurn||store.phase!=='bidding'"
-        @play="onCardPlay"
+        @play-with-rects="onCardPlayWithRects"
       />
     </div>
 
@@ -128,37 +129,46 @@
       <div v-if="store.phase==='bidding' && store.isSpectator" class="spectator-waiting">观战中 · 等待玩家操作…</div>
     </section>
 
-    <!-- ── 战局 + 聊天双栏区 ── -->
+    <!-- ── 统一消息流（战局 + 聊天） ── -->
     <section class="log-strip">
-      <div class="log-dual">
-        <!-- 左：战局记录 -->
-        <div class="log-battle-col">
-          <div class="log-col-header">📜 战局</div>
-          <GameLog :hide-input="true" />
+      <div class="log-unified-area">
+        <GameLog :hide-input="true" />
+      </div>
+      <!-- 常驻聊天输入区 -->
+      <div class="log-persistent-input">
+        <div class="log-emoji-bar">
+          <button v-for="e in persistentEmojis" :key="e" @click="persistentSendEmoji(e)" class="log-emoji-btn">{{ e }}</button>
         </div>
-        <!-- 右：闲话聊天 -->
-        <div class="log-chat-col">
-          <div class="log-col-header">💬 闲话</div>
-          <div class="log-persistent-input">
-            <div class="log-emoji-bar">
-              <button v-for="e in persistentEmojis" :key="e" @click="persistentSendEmoji(e)" class="log-emoji-btn">{{ e }}</button>
-            </div>
-            <div class="log-input-row">
-              <input
-                v-model="persistentInput"
-                @keyup.enter="persistentSend"
-                maxlength="60"
-                placeholder="说点什么…"
-                class="log-input"
-              />
-              <button @click="persistentSend" class="btn-gold log-send-btn">发</button>
-            </div>
-          </div>
+        <div class="log-input-row">
+          <input
+            v-model="persistentInput"
+            @keyup.enter="persistentSend"
+            maxlength="60"
+            placeholder="说点什么…"
+            class="log-input"
+          />
+          <button @click="persistentSend" class="btn-gold log-send-btn">发</button>
         </div>
       </div>
     </section>
 
     <!-- ── 浮层 ── -->
+    <!-- ── 飞牌动画层 ── -->
+    <div class="flying-cards-layer" aria-hidden="true">
+      <div
+        v-for="fc in flyingCards"
+        :key="fc.id"
+        class="flying-card"
+        :class="{ 'flying-card--active': fc.active }"
+        :style="{
+          left: (fc.active ? fc.endX : fc.startX) + 'px',
+          top:  (fc.active ? fc.endY  : fc.startY) + 'px',
+        }"
+      >
+        <div class="flying-card__inner"><span class="flying-card__glyph">龙</span></div>
+      </div>
+    </div>
+
     <DealingOverlay v-if="showDealing && store.room" :players="store.room.players" :my-id="store.myId" :total-cards="5" @done="showDealing=false" />
     <PunishmentModal v-if="store.showPunishment && store.challengeResult" :result="store.challengeResult" @close="store.closePunishment()" />
     <!-- 质疑打断横幅 -->
@@ -179,7 +189,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/gameStore';
 import type { DiceFace, CardValue, PlayerPublicView } from '../stores/gameStore';
@@ -197,11 +207,137 @@ import { replay } from '../utils/ReplayRecorder';
 import { inkSplash } from '../utils/useConfetti';
 import { preloadToastAudio } from '../utils/toastQuotes';
 
+interface FlyingCard {
+  id: number;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  active: boolean;
+}
+
 const router = useRouter();
 const store  = useGameStore();
 
 const persistentInput = ref('');
 const persistentEmojis = ['😂','🤣','😤','🤡','💀','🍶','👀','🫣','😱','🎉'];
+
+// ── 飞牌动画 ────────────────────────────────────────────────
+const tableAreaRef = ref<InstanceType<typeof TableArea> | null>(null);
+const flyingCards = ref<FlyingCard[]>([]);
+let flyingCardCounter = 0;
+
+// 座位容器 refs，用于计算对手飞牌起点
+const seatTopRef    = ref<HTMLElement | null>(null);
+const seatLeftRef   = ref<HTMLElement | null>(null);
+const seatRightRef  = ref<HTMLElement | null>(null);
+const seatBottomRef = ref<HTMLElement | null>(null);
+
+function getSeatRefForPlayer(playerId: string): HTMLElement | null {
+  const s = seats.value;
+  if (s.top?.id    === playerId) return seatTopRef.value;
+  if (s.left?.id   === playerId) return seatLeftRef.value;
+  if (s.right?.id  === playerId) return seatRightRef.value;
+  if (s.bottom?.id === playerId) return seatBottomRef.value;
+  return null;
+}
+
+function triggerOpponentFly(stack: { playerId: string; playerName: string; count: number }) {
+  const cardWidth  = 56;  // ~3.5rem
+  const cardHeight = 80;  // ~5rem
+
+  // Destination: center of TableArea
+  let destX = window.innerWidth  / 2 - cardWidth  / 2;
+  let destY = window.innerHeight / 3 - cardHeight / 2;
+  const tableEl = tableAreaRef.value?.$el as HTMLElement | undefined;
+  if (tableEl) {
+    const tr = tableEl.getBoundingClientRect();
+    destX = tr.left + tr.width  / 2 - cardWidth  / 2;
+    destY = tr.top  + tr.height / 2 - cardHeight / 2;
+  }
+
+  // Source: center of the seat element for this player
+  let srcX = window.innerWidth  / 2 - cardWidth  / 2;
+  let srcY = window.innerHeight / 2 - cardHeight / 2;
+  const seatEl = getSeatRefForPlayer(stack.playerId);
+  if (seatEl) {
+    const sr = seatEl.getBoundingClientRect();
+    srcX = sr.left + sr.width  / 2 - cardWidth  / 2;
+    srcY = sr.top  + sr.height / 2 - cardHeight / 2;
+  }
+
+  const n = stack.count;
+  const created: FlyingCard[] = Array.from({ length: n }, (_, idx) => ({
+    id: flyingCardCounter++,
+    startX: srcX,
+    startY: srcY,
+    endX: destX + (idx - (n - 1) / 2) * (cardWidth + 4),
+    endY: destY,
+    active: false,
+  }));
+
+  flyingCards.value = [...flyingCards.value, ...created];
+
+  nextTick(() => {
+    created.forEach(fc => {
+      const found = flyingCards.value.find(c => c.id === fc.id);
+      if (found) found.active = true;
+    });
+  });
+
+  // After animation, push to tableCardStacks and clean up
+  setTimeout(() => {
+    store.tableCardStacks.push({ playerId: stack.playerId, playerName: stack.playerName, count: stack.count });
+    store.pendingOpponentPlay = null;
+    flyingCards.value = flyingCards.value.filter(c => !created.find(fc => fc.id === c.id));
+  }, 480);
+}
+
+// Watch for opponent plays and trigger fly-in animation
+watch(() => store.pendingOpponentPlay, (val) => {
+  if (val) triggerOpponentFly(val);
+});
+
+function onCardPlayWithRects(payload: { cards: CardValue[]; rects: DOMRect[] }) {
+  const { cards, rects } = payload;
+
+  // Get destination: center of the TableArea element (or center of screen as fallback)
+  let destX = window.innerWidth / 2;
+  let destY = window.innerHeight / 3;
+  const tableEl = tableAreaRef.value?.$el as HTMLElement | undefined;
+  if (tableEl) {
+    const tableRect = tableEl.getBoundingClientRect();
+    destX = tableRect.left + tableRect.width / 2;
+    destY = tableRect.top + tableRect.height / 2;
+  }
+
+  // Create one flying card per selected card
+  const cardWidth = 56; // ~3.5rem
+  const created: FlyingCard[] = rects.map((rect, idx) => ({
+    id: flyingCardCounter++,
+    startX: rect.left + rect.width / 2 - cardWidth / 2,
+    startY: rect.top + rect.height / 2 - cardWidth * (80 / 56) / 2,
+    endX: destX - cardWidth / 2 + (idx - (rects.length - 1) / 2) * (cardWidth + 4),
+    endY: destY - cardWidth * (80 / 56) / 2,
+    active: false,
+  }));
+
+  flyingCards.value = [...flyingCards.value, ...created];
+
+  // Trigger CSS transition on next tick
+  nextTick(() => {
+    created.forEach(fc => {
+      const found = flyingCards.value.find(c => c.id === fc.id);
+      if (found) found.active = true;
+    });
+  });
+
+  // After animation (~480ms), call store.cardPlay and clean up
+  setTimeout(() => {
+    store.cardPlay(cards);
+    flyingCards.value = flyingCards.value.filter(c => !created.find(fc => fc.id === c.id));
+  }, 480);
+}
 function persistentSend() {
   if (!persistentInput.value.trim()) return;
   store.sendChat(persistentInput.value.trim());
@@ -305,7 +441,7 @@ function onChallenge() {
   showChallengeFlash(`${challengerName} 质疑了 ${bidderName}`, 1800);
   store.gameMode === 'dice' ? store.diceChallenge() : store.cardChallenge();
 }
-function onCardPlay(cards: CardValue[]) { store.cardPlay(cards); }
+// onCardPlay removed – replaced by onCardPlayWithRects for fly animation
 function backToLobby() { store.disconnect(); router.push('/'); }
 function confirmLeave() {
   if (store.phase === 'waiting' || store.phase === 'gameOver') {
@@ -520,66 +656,38 @@ onMounted(() => {
 }
 .spectator-waiting { text-align: center; font-size: 0.68rem; opacity: 0.4; letter-spacing: 0.12em; padding: 0.5rem 0; }
 
-/* ── 战局+聊天双栏区 ── */
+/* ── 统一消息流区 ── */
 .log-strip {
   flex-shrink: 0;
   border-top: 1px solid rgba(212,168,67,0.1);
   background: rgba(0,0,0,0.18);
-}
-.log-dual {
-  display: flex;
-  height: 9rem;
-}
-
-/* 左栏：战局 */
-.log-battle-col {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid rgba(212,168,67,0.12);
-  min-width: 0;
-  overflow: hidden;
 }
-
-/* 右栏：聊天 */
-.log-chat-col {
-  flex: 1;
+.log-unified-area {
+  height: 7rem;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  overflow: hidden;
 }
 
-/* 列标题 */
-.log-col-header {
-  font-size: 0.58rem;
-  letter-spacing: 0.12em;
-  color: var(--gold);
-  opacity: 0.5;
-  padding: 0.18rem 0.5rem 0.1rem;
-  flex-shrink: 0;
-  border-bottom: 1px solid rgba(212,168,67,0.08);
-}
-
-/* ── 常驻输入区（右栏内） ── */
+/* ── 常驻输入区 ── */
 .log-persistent-input {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
+  border-top: 1px solid rgba(212,168,67,0.08);
   background: transparent;
 }
 .log-emoji-bar {
   display: flex;
-  gap: 0.15rem;
-  padding: 0.12rem 0.4rem 0.05rem;
+  gap: 0.18rem;
+  padding: 0.18rem 0.75rem 0.05rem;
   flex-wrap: wrap;
 }
 .log-emoji-btn {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 0.88rem;
+  font-size: 0.95rem;
   padding: 0.05rem;
   transition: transform 0.12s;
   line-height: 1;
@@ -587,17 +695,17 @@ onMounted(() => {
 .log-emoji-btn:active { transform: scale(0.82); }
 .log-input-row {
   display: flex;
-  gap: 0.3rem;
-  padding: 0.2rem 0.4rem calc(env(safe-area-inset-bottom, 0px) + 0.2rem);
+  gap: 0.4rem;
+  padding: 0.22rem 0.75rem calc(env(safe-area-inset-bottom, 0px) + 0.22rem);
 }
 .log-input {
   flex: 1;
-  padding: 0.28rem 0.5rem;
-  border-radius: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 0.45rem;
   background: rgba(0,0,0,0.4);
   border: 1px solid rgba(255,255,255,0.07);
   color: var(--parchment);
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-family: inherit;
   outline: none;
   transition: border-color 0.2s;
@@ -606,8 +714,8 @@ onMounted(() => {
 .log-input:focus { border-color: rgba(212,168,67,0.4); }
 .log-input::placeholder { color: rgba(255,255,255,0.22); }
 .log-send-btn {
-  padding: 0.22rem 0.5rem;
-  font-size: 0.72rem;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.75rem;
   flex-shrink: 0;
 }
 
@@ -657,6 +765,55 @@ onMounted(() => {
 @keyframes cfOut {
   from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   to   { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+}
+
+/* ── 飞牌动画层 ── */
+.flying-cards-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 70;
+}
+.flying-card {
+  position: absolute;
+  width: 3.5rem;
+  height: 5rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+  transition: left 0.44s cubic-bezier(0.4, 0, 0.2, 1),
+              top  0.44s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.44s ease,
+              transform 0.44s cubic-bezier(0.34,1.2,0.64,1);
+  transform: scale(1.12) rotate(-6deg);
+  opacity: 1;
+  will-change: left, top, transform;
+}
+.flying-card--active {
+  transform: scale(0.88) rotate(0deg);
+  opacity: 0.85;
+}
+.flying-card__inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 0.5rem;
+  border: 1.5px solid rgba(212,168,67,0.4);
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(80,30,10,0.93),
+    rgba(80,30,10,0.93) 3px,
+    rgba(55,18,4,0.93) 3px,
+    rgba(55,18,4,0.93) 6px
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.flying-card__glyph {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: #d4a843;
+  opacity: 0.15;
+  user-select: none;
 }
 
 /* ── 过渡 ── */
