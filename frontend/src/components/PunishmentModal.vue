@@ -213,7 +213,6 @@ function tryClose() { if (canClose.value) emit('close'); }
 // ── 骰子模式动画 ──────────────────────────────────────────
 function runDiceAnim() {
   // 骰子模式：每次受罚都喝蒙汗药（骰子 -1），livesLost>0 代表骰子归零扣命/淘汰
-  const punishment = (props.result as any).punishment as { livesLost: number; livesRemaining: number; eliminated: boolean };
   setTimeout(() => { phase.value = 'lift'; },  400);
   setTimeout(() => { phase.value = 'drink'; playDrinkSound(); }, 1100);
   setTimeout(async () => {
