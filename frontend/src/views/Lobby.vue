@@ -291,12 +291,13 @@ watch(() => store.phase, (p) => {
 .lobby-cover-bg {
   position: absolute;
   inset: 0;
-  background-image: url('/cover-bg.png');
+  /* 占位色：图片加载前不显示空白 */
+  background-color: #1a120a;
+  background-image: url('/cover-bg.webp');
   background-size: cover;
   background-position: center 30%;
   background-repeat: no-repeat;
   filter: brightness(0.55) saturate(1.1);
-  /* 不使用 scale，改用 inset 负值来覆盖边缘，避免溢出 */
   z-index: 0;
 }
 

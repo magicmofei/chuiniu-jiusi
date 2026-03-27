@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* ── 方正像素12 本地字体 ───────────────────────────────────── */
+@font-face {
+  font-family: 'FZPixel';
+  src: url('/方正像素12.TTF') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap; /* 先用系统字体渲染，字体加载后再替换，不阻塞首屏 */
+}
+
 :root {
   --ink-dark:    #0a0804;
   --ink-mid:     #1e1408;
@@ -19,7 +28,7 @@ html, body, #app {
   overflow-x: hidden;
   background: var(--ink-dark);
   color: var(--parchment);
-  font-family: 'STSong', 'SimSun', 'Songti SC', 'Source Han Serif SC', serif;
+  font-family: 'FZPixel', 'STSong', 'SimSun', 'Songti SC', serif;
   overflow-x: hidden;
 }
 
