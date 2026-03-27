@@ -73,8 +73,25 @@
           <p class="result-label" :class="result.bidSuccess ? 'c-jade' : 'c-red'">
             {{ result.bidSuccess ? '叫牌成真！' : '吹牛败露！' }}
           </p>
-          <p class="hint-xs">实际出牌：{{ result.bid.actualCards?.join(' · ') ?? '—' }}（目标牌：{{ result.bid.targetCard }}）</p>
+          <p class="hint-xs">目标牌：{{ result.bid.targetCard }}｜{{ result.bidSuccess ? '全部命中' : '有牌说谎' }}</p>
         </div>
+
+        <!-- 亮牌区 -->
+        <div class="card-reveal-row">
+          <div
+            v-for="(card, ci) in (result.bid as any).actualCards"
+            :key="ci"
+            class="reveal-card"
+            :class="isCardWrong(card) ? 'reveal-card--wrong' : 'reveal-card--ok'"
+            :style="{ animationDelay: ci * 0.12 + 's' }"
+          >
+            <span class="reveal-card__val">{{ card }}</span>
+            <span v-if="isCardWrong(card)" class="reveal-card__badge">✗</span>
+            <span v-else class="reveal-card__badge ok">✓</span>
+          </div>
+        </div>
+        <p v-if="result.bidSuccess" class="text-center text-xs c-gold tracking-widest mt-1 mb-2" style="animation:pulse 1s ease infinite alternate">✦ 所出之牌，枚枚属实 ✦</p>
+        <p v-else class="text-center text-xs c-red tracking-widest mt-1 mb-2">✗ 出现杂牌，吹牛败露！</p>
 
         <div class="drink-stage" :class="stageClass">
           <div v-if="cPhase==='poisoned'" class="smoke-wrap">
@@ -149,6 +166,12 @@ const stageClass = computed(() => {
 });
 
 function faceChar(f: number) { return ['⚀','⚁','⚂','⚃','⚄','⚅'][f-1] ?? '?'; }
+
+function isCardWrong(card: string): boolean {
+  if (props.result.type !== 'card') return false;
+  const target = props.result.bid.targetCard;
+  return card !== target && card !== 'Joker';
+}
 
 const dicePunishment = computed(() => props.result.type === 'dice' ? props.result.punishment : null);
 const cardPunishment = computed(() => props.result.type === 'card' ? props.result.punishment : null);
@@ -342,4 +365,69 @@ onUnmounted(() => clearInterval(timer));
   transition:all .2s;
 }
 .btn-continue:hover { background:rgba(212,168,67,.15); border-color:#d4a843; }
+
+/* ══ 亮牌区 ══ */
+.card-reveal-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  justify-content: center;
+  margin-bottom: .75rem;
+  padding: .5rem;
+}
+
+.reveal-card {
+  position: relative;
+  width: 3.2rem;
+  height: 4.4rem;
+  border-radius: .5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #faf6ee, #ede8dc);
+  border: 2px solid transparent;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+  animation: cardFlip .4s cubic-bezier(0.34,1.56,0.64,1) both;
+  transform-style: preserve-3d;
+}
+@keyframes cardFlip {
+  from { opacity:0; transform: rotateY(90deg) scale(0.7); }
+  to   { opacity:1; transform: rotateY(0deg) scale(1); }
+}
+
+.reveal-card--ok {
+  border-color: rgba(212,168,67,0.6);
+  box-shadow: 0 0 14px rgba(212,168,67,0.45), 0 3px 10px rgba(0,0,0,0.4);
+  background: linear-gradient(145deg, #fffbef, #f5edc8);
+}
+
+.reveal-card--wrong {
+  border-color: rgba(192,57,43,0.7);
+  box-shadow: 0 0 12px rgba(192,57,43,0.5), 0 3px 10px rgba(0,0,0,0.4);
+  background: linear-gradient(145deg, #fff0ee, #f5d5d0);
+}
+
+.reveal-card__val {
+  font-size: 1.3rem;
+  font-weight: 900;
+  line-height: 1;
+}
+.reveal-card--ok .reveal-card__val   { color: #8b6914; }
+.reveal-card--wrong .reveal-card__val { color: #8b1a1a; }
+
+.reveal-card__badge {
+  position: absolute;
+  bottom: .2rem;
+  right: .25rem;
+  font-size: .65rem;
+  font-weight: 700;
+  color: #c0392b;
+}
+.reveal-card__badge.ok { color: #d4a843; }
+
+@keyframes pulse {
+  from { opacity: 0.6; text-shadow: none; }
+  to   { opacity: 1; text-shadow: 0 0 8px rgba(212,168,67,0.8); }
+}
 </style> 
