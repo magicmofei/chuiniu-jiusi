@@ -15,7 +15,7 @@ import {
 
 const CARD_VALUES: CardValue[] = ['Q', 'K', 'A'];
 const HAND_SIZE = 5;  // 每人 5 张手牌
-const MAX_PLAY = 5;   // 每次最多出 5 张（最多手牌数）
+const MAX_PLAY = 3;   // 每次最多出 3 张
 const BOTTLE_COUNT = 6;
 
 // 生成完整牌组：Q×6 + K×6 + A×6 + Joker×2 = 20 张
@@ -86,11 +86,6 @@ export class CardGame extends GameEngine {
     if (!currentPlayer || currentPlayer.id !== playerId) return '还没轮到你出牌';
     if (!Array.isArray(cards) || cards.length < 1 || cards.length > MAX_PLAY)
       return `每次须出 1 到 ${MAX_PLAY} 张牌`;
-
-    // 出牌数量必须严格大于上家
-    const prevBid = this.room.currentCardBid;
-    if (prevBid && cards.length <= prevBid.quantity)
-      return `出牌数量须大于上家（上家出了 ${prevBid.quantity} 张），至少出 ${prevBid.quantity + 1} 张`;
 
     // 验证手牌合法性
     const handCopy = [...currentPlayer.hand] as CardValue[];
@@ -262,15 +257,9 @@ export class CardGame extends GameEngine {
     const validCards  = player.hand.filter(c => c === target || c === 'Joker') as CardValue[];
     const otherCards  = player.hand.filter(c => c !== target && c !== 'Joker') as CardValue[];
 
-    // 出牌数量必须大于上家，若无上家则从 1 开始
-    const prevBid = this.room.currentCardBid;
-    const minPlay = prevBid ? prevBid.quantity + 1 : 1;
+    // 每次随机出 1-MAX_PLAY 张
     const maxPlay = Math.min(MAX_PLAY, player.hand.length);
-
-    // 若无法满足最低出牌数量要求，必须质疑
-    if (minPlay > maxPlay) return { action: 'challenge' };
-
-    const numPlay = this.secureRandInt(minPlay, maxPlay);
+    const numPlay = this.secureRandInt(1, maxPlay);
 
     // 优先出目标牌/Joker，不够就混入非目标牌（撒谎）
     const cards: CardValue[] = [

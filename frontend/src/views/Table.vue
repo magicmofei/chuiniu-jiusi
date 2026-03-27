@@ -57,7 +57,7 @@
 
         <DiceCup v-if="store.gameMode==='dice'" :dice="store.myDice" :rolling="store.diceRolling" />
         <TableArea v-if="store.gameMode==='card' && store.tableCardStacks.length > 0" :stacks="store.tableCardStacks" />
-        <CardHand v-if="store.gameMode==='card'" :key="store.myHand.length" :hand="store.myHand" :target-card="store.room?.targetCard??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" :min-cards="cardMinPlay" @play="onCardPlay" />
+        <CardHand v-if="store.gameMode==='card'" :key="store.myHand.length" :hand="store.myHand" :target-card="store.room?.targetCard??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" @play="onCardPlay" />
         <CallPanel v-if="store.phase==='bidding' && !store.isSpectator" :mode="store.gameMode" :is-my-turn="store.isMyTurn" :current-player-name="store.currentPlayer?.name??''" :current-bid="store.room?.currentDiceBid??store.room?.currentCardBid??null" :target-card="store.room?.targetCard??null" :my-dice="store.myDice" @dice-bid="onDiceBid" @challenge="onChallenge" />
         <div v-if="store.phase==='bidding' && store.isSpectator" class="card-ink p-3 text-center text-xs opacity-40 tracking-widest">观战中 · 等待玩家操作…</div>
 
@@ -174,12 +174,6 @@ const currentBidDisplay = computed(() => {
     return { playerName: b.playerName, label: `${b.quantity} 张目标牌（${b.targetCard}）` };
   }
   return null;
-});
-
-// 本轮最少出牌数（必须大于上家）
-const cardMinPlay = computed(() => {
-  const prev = store.room?.currentCardBid;
-  return prev ? prev.quantity + 1 : 1;
 });
 
 function faceChar(f: number) { return ['⚀','⚁','⚂','⚃','⚄','⚅'][f - 1] ?? '?'; }
