@@ -11,21 +11,37 @@
       <transition-group name="msg">
         <div v-for="msg in store.chatMessages" :key="msg.id"
           class="flex items-start gap-2"
-          :class="msg.playerId===store.myId?'flex-row-reverse':''"
+          :class="msg.playerId==='system' ? 'justify-center' : msg.playerId===store.myId ? 'flex-row-reverse' : ''"
         >
-          <span class="text-xl flex-shrink-0 mt-0.5">{{ msg.avatar }}</span>
-          <div class="max-w-[75%]">
-            <p class="text-xs opacity-40 mb-0.5" :class="msg.playerId===store.myId?'text-right':''">
-              {{ msg.playerName }}
-            </p>
-            <p v-if="msg.type==='emoji'" class="text-3xl">{{ msg.text }}</p>
-            <p v-else
-              class="text-sm px-3 py-1.5 rounded-xl break-words leading-relaxed"
-              :class="msg.playerId===store.myId
-                ? 'bg-yellow-900/30 text-yellow-100'
-                : 'bg-white/5 text-white/80'"
-            >{{ msg.text }}</p>
-          </div>
+          <!-- 系统消息（开场名言等）：居中展示，古风样式 -->
+          <template v-if="msg.playerId==='system'">
+            <div class="w-full px-1">
+              <div v-if="msg.text.startsWith('──')" class="text-center text-xs tracking-widest opacity-30 py-0.5">{{ msg.text }}</div>
+              <div v-else class="system-quote">
+                <span class="system-quote__avatar">{{ msg.avatar }}</span>
+                <div class="system-quote__body">
+                  <span class="system-quote__name">{{ msg.playerName }}</span>
+                  <span class="system-quote__text">{{ msg.text }}</span>
+                </div>
+              </div>
+            </div>
+          </template>
+          <!-- 普通聊天消息 -->
+          <template v-else>
+            <span class="text-xl flex-shrink-0 mt-0.5">{{ msg.avatar }}</span>
+            <div class="max-w-[75%]">
+              <p class="text-xs opacity-40 mb-0.5" :class="msg.playerId===store.myId?'text-right':''">
+                {{ msg.playerName }}
+              </p>
+              <p v-if="msg.type==='emoji'" class="text-3xl">{{ msg.text }}</p>
+              <p v-else
+                class="text-sm px-3 py-1.5 rounded-xl break-words leading-relaxed"
+                :class="msg.playerId===store.myId
+                  ? 'bg-yellow-900/30 text-yellow-100'
+                  : 'bg-white/5 text-white/80'"
+              >{{ msg.text }}</p>
+            </div>
+          </template>
         </div>
       </transition-group>
       <div v-if="!store.chatMessages.length" class="text-center text-xs opacity-20 mt-6 tracking-widest">
@@ -125,4 +141,40 @@ watch(() => store.chatMessages.length, async () => {
 <style scoped>
 .msg-enter-active { transition: all 0.2s ease; }
 .msg-enter-from   { opacity: 0; transform: translateY(6px); }
+
+/* 开场名言 / 系统消息 */
+.system-quote {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.6rem;
+  background: linear-gradient(135deg, rgba(212,168,67,0.07), rgba(212,168,67,0.03));
+  border-left: 2px solid rgba(212,168,67,0.35);
+  margin: 0.1rem 0;
+}
+.system-quote__avatar {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+}
+.system-quote__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.system-quote__name {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(212,168,67,0.75);
+}
+.system-quote__text {
+  font-size: 0.78rem;
+  color: rgba(255,248,220,0.7);
+  font-style: italic;
+  line-height: 1.5;
+  word-break: break-all;
+}
 </style>

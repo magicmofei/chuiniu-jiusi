@@ -1,6 +1,5 @@
 <template>
   <div class="min-h-screen flex flex-col safe-top table-scene">
-    <OpeningQuoteOverlay />
     <WinnerOverlay :show="store.winnerBanner" :winner-name="store.room?.winner??''" :rounds="store.room?.round" @close="store.winnerBanner=false" />
 
     <div v-if="store.isSpectator" class="flex items-center justify-center gap-2 px-4 py-1.5 text-xs tracking-widest" style="background:rgba(212,168,67,0.08);border-bottom:1px solid rgba(212,168,67,0.15);color:var(--gold)">
@@ -58,7 +57,7 @@
 
         <DiceCup v-if="store.gameMode==='dice'" :dice="store.myDice" :rolling="store.diceRolling" />
         <TableArea v-if="store.gameMode==='card' && store.tableCardStacks.length > 0" :stacks="store.tableCardStacks" />
-        <CardHand v-if="store.gameMode==='card'" :key="store.myHand.length" :hand="store.myHand" :target-card="store.room?.targetCard??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" @play="onCardPlay" />
+        <CardHand v-if="store.gameMode==='card'" :key="store.myHand.length" :hand="store.myHand" :target-card="store.room?.targetCard??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" :min-cards="cardMinPlay" @play="onCardPlay" />
         <CallPanel v-if="store.phase==='bidding' && !store.isSpectator" :mode="store.gameMode" :is-my-turn="store.isMyTurn" :current-player-name="store.currentPlayer?.name??''" :current-bid="store.room?.currentDiceBid??store.room?.currentCardBid??null" :target-card="store.room?.targetCard??null" :my-dice="store.myDice" @dice-bid="onDiceBid" @challenge="onChallenge" />
         <div v-if="store.phase==='bidding' && store.isSpectator" class="card-ink p-3 text-center text-xs opacity-40 tracking-widest">观战中 · 等待玩家操作…</div>
 
@@ -83,6 +82,13 @@
       <aside v-show="showChat" class="xl:w-64 flex-shrink-0"><ChatPanel /></aside>
     </div>
 
+    <DealingOverlay
+      v-if="showDealing && store.room"
+      :players="store.room.players"
+      :my-id="store.myId"
+      :total-cards="5"
+      @done="showDealing = false"
+    />
     <PunishmentModal v-if="store.showPunishment && store.challengeResult" :result="store.challengeResult" @close="store.closePunishment()" />
     <transition name="toast">
       <div v-if="store.errorMsg" class="fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 rounded-xl z-50 flex items-center gap-3 safe-bottom" style="background:var(--vermillion);color:white">
@@ -107,8 +113,8 @@ import ChatPanel from '../components/ChatPanel.vue';
 import GameLog from '../components/GameLog.vue';
 import WinnerOverlay from '../components/WinnerOverlay.vue';
 import BottleRow from '../components/BottleRow.vue';
-import OpeningQuoteOverlay from '../components/OpeningQuoteOverlay.vue';
 import TableArea from '../components/TableArea.vue';
+import DealingOverlay from '../components/DealingOverlay.vue';
 import { sound } from '../utils/useSound';
 import { replay } from '../utils/ReplayRecorder';
 import { inkSplash } from '../utils/useConfetti';
@@ -117,6 +123,7 @@ const router = useRouter();
 const store  = useGameStore();
 const showChat     = ref(true);
 const soundEnabled = ref(localStorage.getItem('chuiniu_sound') !== 'off');
+const showDealing  = ref(false);
 const lastReadCount = ref(0);
 
 const unreadCount = computed(() =>
@@ -129,6 +136,12 @@ watch(() => store.room?.currentDiceBid, (v, old) => {
 });
 watch(() => store.room?.currentCardBid, (v, old) => {
   if (v && v !== old && soundEnabled.value) sound.bidConfirm();
+});
+// 每次发牌（game:start 或 game:roundStart）时显示发牌动画
+watch(() => store.room?.round, (newRound, oldRound) => {
+  if (newRound && newRound !== oldRound && store.gameMode === 'card') {
+    showDealing.value = true;
+  }
 });
 
 const emptySeats = computed(() => Math.max(0, 4 - (store.room?.players.length ?? 0)));
@@ -161,6 +174,12 @@ const currentBidDisplay = computed(() => {
     return { playerName: b.playerName, label: `${b.quantity} 张目标牌（${b.targetCard}）` };
   }
   return null;
+});
+
+// 本轮最少出牌数（必须大于上家）
+const cardMinPlay = computed(() => {
+  const prev = store.room?.currentCardBid;
+  return prev ? prev.quantity + 1 : 1;
 });
 
 function faceChar(f: number) { return ['⚀','⚁','⚂','⚃','⚄','⚅'][f - 1] ?? '?'; }

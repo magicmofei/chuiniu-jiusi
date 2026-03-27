@@ -87,6 +87,11 @@ export class CardGame extends GameEngine {
     if (!Array.isArray(cards) || cards.length < 1 || cards.length > MAX_PLAY)
       return `每次须出 1 到 ${MAX_PLAY} 张牌`;
 
+    // 出牌数量必须严格大于上家
+    const prevBid = this.room.currentCardBid;
+    if (prevBid && cards.length <= prevBid.quantity)
+      return `出牌数量须大于上家（上家出了 ${prevBid.quantity} 张），至少出 ${prevBid.quantity + 1} 张`;
+
     // 验证手牌合法性
     const handCopy = [...currentPlayer.hand] as CardValue[];
     for (const c of cards) {
@@ -257,9 +262,15 @@ export class CardGame extends GameEngine {
     const validCards  = player.hand.filter(c => c === target || c === 'Joker') as CardValue[];
     const otherCards  = player.hand.filter(c => c !== target && c !== 'Joker') as CardValue[];
 
-    // AI 随机出 1-3 张（不超过手牌数）
-    const maxPlay  = Math.min(MAX_PLAY, player.hand.length);
-    const numPlay  = this.secureRandInt(1, maxPlay);
+    // 出牌数量必须大于上家，若无上家则从 1 开始
+    const prevBid = this.room.currentCardBid;
+    const minPlay = prevBid ? prevBid.quantity + 1 : 1;
+    const maxPlay = Math.min(MAX_PLAY, player.hand.length);
+
+    // 若无法满足最低出牌数量要求，必须质疑
+    if (minPlay > maxPlay) return { action: 'challenge' };
+
+    const numPlay = this.secureRandInt(minPlay, maxPlay);
 
     // 优先出目标牌/Joker，不够就混入非目标牌（撒谎）
     const cards: CardValue[] = [

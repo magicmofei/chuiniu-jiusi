@@ -33,12 +33,18 @@
         已选 <strong style="color:var(--gold)">{{ selected.length }}</strong> 张
         · 声称全是&nbsp;<strong style="color:var(--gold)">{{ targetCard ?? '目标牌' }}</strong>
       </span>
-      <button @click="playCards" class="btn-gold text-xs px-4 py-1.5">出牌！</button>
+      <span v-if="tooFew" class="text-xs" style="color:var(--vermillion)">
+        须 ≥ {{ minCards }} 张（大于上家）
+      </span>
+      <button @click="playCards" :disabled="tooFew" class="btn-gold text-xs px-4 py-1.5" :class="tooFew ? 'opacity-30 cursor-not-allowed' : ''">出牌！</button>
       <button @click="selected = []" class="text-xs opacity-40 hover:opacity-70">取消</button>
     </div>
 
     <p v-if="!hasSelected && !disabled && hand.length > 0" class="text-xs opacity-20 mt-2">
-      点击选牌（1-{{ Math.min(5, hand.length) }} 张），选完后点「出牌！」
+      {{ minCards && minCards > 1 ? `须出 ${minCards}-${Math.min(5, hand.length)} 张（大于上家 ${minCards-1} 张）` : `点击选牌（1-${Math.min(5, hand.length)} 张），选完后点「出牌！」` }}
+    </p>
+    <p v-if="!hasSelected && !disabled && hand.length > 0 && minCards && minCards > hand.length" class="text-xs mt-1" style="color:var(--vermillion)">
+      ⚠ 手牌不足以超过上家，请质疑！
     </p>
   </div>
 </template>
@@ -51,6 +57,7 @@ const props = defineProps<{
   hand: CardValue[];
   targetCard: CardValue | null;
   disabled: boolean;
+  minCards?: number; // 本次出牌最少张数（必须 > 上家）
 }>();
 
 const emit = defineEmits<{
@@ -59,6 +66,7 @@ const emit = defineEmits<{
 
 const selected = ref<number[]>([]);
 const hasSelected = computed(() => selected.value.length > 0);
+const tooFew = computed(() => !!props.minCards && selected.value.length < props.minCards);
 
 function isSelected(i: number) {
   return selected.value.includes(i);

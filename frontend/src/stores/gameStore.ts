@@ -206,8 +206,8 @@ export const useGameStore = defineStore('game', () => {
     s.on('error', (msg: string) => { errorMsg.value = msg; });
     s.on('room:update', (r: RoomPublicView) => { room.value = r; gameMode.value = r.mode; });
     s.on('game:stateUpdate', (r: RoomPublicView) => {
-      // 若惩罚弹窗正在显示，跳过 stateUpdate 以免中途清掉 punishment 状态
-      if (showPunishment.value) return;
+      // 惩罚弹窗显示期间：仅允许 gameOver 相态更新通过，其余跳过以免清掉 punishment 状态
+      if (showPunishment.value && r.phase !== 'gameOver') return;
       const prevDiceBid = room.value?.currentDiceBid;
       const prevCardBid = room.value?.currentCardBid;
       room.value = r;
@@ -290,31 +290,57 @@ export const useGameStore = defineStore('game', () => {
       }
       replay.push('roundStart', { round: data.room.round });
     });
-    // v2.0 开场名言
+    // v2.0 开场名言 —— 逐条发到公屏聊天（不弹窗）
     s.on('game:openingQuotes', (quotes: OpeningQuoteItem[]) => {
       openingQuotes.value = quotes;
       currentQuoteIndex.value = 0;
-      showingOpeningQuotes.value = true;
+      showingOpeningQuotes.value = false; // 不使用弹窗覆盖层
+      // 先插入一条引导系统消息
+      chatMessages.value.push({
+        id: `oq-header-${Date.now()}`,
+        playerId: 'system',
+        playerName: '汴京酒楼',
+        avatar: '🕯️',
+        text: '── 众豪客入座，各展风采 ──',
+        time: Date.now(),
+        type: 'system',
+      });
+      // 逐条延时推送名言
+      quotes.forEach((q, i) => {
+        setTimeout(() => {
+          chatMessages.value.push({
+            id: `oq-${q.playerId}-${i}`,
+            playerId: 'system',
+            playerName: q.characterName,
+            avatar: ({ laugh: '😄', slamTable: '👊', quote: '📜', idle: '😌' })[q.quoteAction] ?? '👤',
+            text: `「${q.quote}」`,
+            time: Date.now(),
+            type: 'system',
+          });
+          if (chatMessages.value.length > 100) chatMessages.value.shift();
+        }, (i + 1) * 800);
+      });
     });
     s.on('game:roundStart', (data: { room: RoomPublicView; yourDice: DiceFace[]; yourHand: CardValue[] }) => {
-      // 若惩罚弹窗还在显示，先缓存，等弹窗关闭后再应用
-      if (showPunishment.value) {
-        pendingRoundStart.value = data;
+      // 始终缓存最新的 roundStart 数据
+      pendingRoundStart.value = data;
+      // 若惩罚弹窗已关闭，立即应用；否则等 closePunishment 触发
+      if (!showPunishment.value) {
+        _applyRoundStart(data);
+      } else {
         addLog(`第 ${data.room.round} 回合准备中，等待结算弹窗关闭…`);
-        return;
       }
-      _applyRoundStart(data);
     });
     s.on('player:challenge', (result: ChallengeResult) => {
       challengeResult.value = result;
       room.value = result.room;
       replay.push('challenge', result);
+      // 无论骰子还是牌模式，都打开惩罚弹窗显示亮牌/亮骰
+      showPunishment.value = true;
       if (result.type === 'dice') {
-        showPunishment.value = true;
         addLog(`${result.challengerName} 质疑 → ${result.bidSuccess?'叫牌成真':'吹牛败露'}，${result.loserNames[0]} 受罚`);
       } else {
-        showPunishment.value = false;
-        addLog(`${result.challengerName} 质疑 → ${result.bidSuccess?'叫牌成真':'吹牛败露'}，${result.loserNames[0]} 需要选酒`);
+        addLog(`${result.challengerName} 质疑 → ${result.bidSuccess?'叫牌成真':'吹牛败露'}，${result.loserNames[0]} 需要喝酒`);
       }
     });
     s.on('game:over', (data: { winner: string; room: RoomPublicView }) => {
@@ -500,10 +526,11 @@ export const useGameStore = defineStore('game', () => {
   function clearError() { errorMsg.value = ''; }
   function closePunishment() {
     showPunishment.value = false;
-    // 若有缓存的 roundStart，现在应用
+    // 若已有缓存的 roundStart，立即应用
     if (pendingRoundStart.value) {
       _applyRoundStart(pendingRoundStart.value);
     }
+    // 若 roundStart 还没到（网络慢等），等它来时会因 showPunishment=false 而自动应用
   }
   function setOpeningQuote(_q: string) { /* legacy compat – handled by game:openingQuotes event */ }
 
