@@ -58,7 +58,7 @@
 
         <DiceCup v-if="store.gameMode==='dice'" :dice="store.myDice" :rolling="store.diceRolling" />
         <TableArea v-if="store.gameMode==='card' && store.tableCardStacks.length > 0" :stacks="store.tableCardStacks" />
-        <CardHand v-if="store.gameMode==='card'" :hand="store.myHand" :target-card="store.room?.targetCard??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" @play="onCardPlay" />
+        <CardHand v-if="store.gameMode==='card'" :key="store.myHand.length" :hand="store.myHand" :target-card="store.room?.targetCard??null" :disabled="!store.isMyTurn||store.phase!=='bidding'" @play="onCardPlay" />
         <CallPanel v-if="store.phase==='bidding' && !store.isSpectator" :mode="store.gameMode" :is-my-turn="store.isMyTurn" :current-player-name="store.currentPlayer?.name??''" :current-bid="store.room?.currentDiceBid??store.room?.currentCardBid??null" :target-card="store.room?.targetCard??null" :my-dice="store.myDice" @dice-bid="onDiceBid" @challenge="onChallenge" />
         <div v-if="store.phase==='bidding' && store.isSpectator" class="card-ink p-3 text-center text-xs opacity-40 tracking-widest">观战中 · 等待玩家操作…</div>
 
@@ -176,7 +176,6 @@ function onChallenge() {
 function onCardPlay(cards: CardValue[]) {
   store.cardPlay(cards);
 }
-function onPickBottle(bottleIndex: number) { store.pickBottle(bottleIndex); }
 function backToLobby() { store.disconnect(); router.push('/'); }
 function confirmLeave() {
   if (store.phase === 'waiting' || store.phase === 'gameOver') {

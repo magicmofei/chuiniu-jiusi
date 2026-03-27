@@ -417,19 +417,21 @@ export const useGameStore = defineStore('game', () => {
   }
   function cardPlay(cards: CardValue[]) {
     socket.value?.emit('player:cardPlay', { cards });
-    // 立即在台面显示本人的牌背（乐观更新，服务端 stateUpdate 会去重）
-    tableCardStacks.value.push({
-      playerId: myId.value,
-      playerName: myName.value,
-      count: cards.length,
-    });
-    // 立即从手牌中移除已打出的牌（乐观更新）
-    const handCopy = [...myHand.value];
+    // 乐观更新台面牌堆（立即显示牌背）
+    tableCardStacks.value = [
+      ...tableCardStacks.value,
+      { playerId: myId.value, playerName: myName.value, count: cards.length },
+    ];
+    // 乐观更新手牌（服务端 card:handUpdate 会覆盖为权威值）
+    const next: CardValue[] = [];
+    const pool = [...myHand.value];
+    // 标记需要移除的索引
+    const toRemove = new Set<number>();
     for (const c of cards) {
-      const idx = handCopy.indexOf(c);
-      if (idx !== -1) handCopy.splice(idx, 1);
+      const idx = pool.findIndex((v, i) => v === c && !toRemove.has(i));
+      if (idx !== -1) toRemove.add(idx);
     }
-    myHand.value = handCopy;
+    myHand.value = pool.filter((_, i) => !toRemove.has(i));
     addLog(`你出牌：${cards.length} 张（声称全是目标牌）`);
     replay.push('cardPlay', { cards, claimQuantity: cards.length });
   }
