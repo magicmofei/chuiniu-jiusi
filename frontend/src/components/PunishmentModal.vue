@@ -51,7 +51,7 @@
             </div>
             <div v-else-if="activePhase==='safe'"     key="p5" class="stage-inner">
               <div class="emoji-wrap emoji-lg anim-safe">😮‍💨</div>
-              <p class="stage-label c-jade">只是普通酒！</p>
+              <p class="stage-label c-jade">{{ toastQuote }}</p>
               <p class="stage-sub">{{ loserName }} 平安无事</p>
             </div>
           </transition>
@@ -128,7 +128,7 @@
             </div>
             <div v-else-if="activePhase==='safe'"     key="p5" class="stage-inner">
               <div class="emoji-wrap emoji-lg anim-safe">😮‍💨</div>
-              <p class="stage-label c-jade">只是普通酒！</p>
+              <p class="stage-label c-jade">{{ toastQuote }}</p>
               <p class="stage-sub">{{ loserName }} 平安无事</p>
             </div>
           </transition>
@@ -146,14 +146,27 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import type { ChallengeResult } from '../stores/gameStore';
 import { useGameStore } from '../stores/gameStore';
-import { sound } from '../utils/useSound';
+import { sound, playToastAudio } from '../utils/useSound';
 import { inkSplash, fireConfetti } from '../utils/useConfetti';
+import { getToastQuote } from '../utils/toastQuotes';
 
 const store = useGameStore();
 const props = defineProps<{ result: ChallengeResult }>();
 const emit  = defineEmits<{ close: [] }>();
 
 const canClose  = ref(false);
+const toastQuote = ref('');
+
+// 输家角色 id，用于抽取专属祝酒词
+const loserCharacterId = computed(() => {
+  const loserId = props.result.type === 'card'
+    ? (props.result as any).loserId
+    : props.result.loserIds?.[0];
+  return store.room?.players.find(p => p.id === loserId)?.characterId ?? null;
+});
+
+// 当前祝酒词音频路径（safe 阶段播放）
+const toastAudioSrc = ref('');
 
 type Phase = 'idle'|'lift'|'drink'|'reveal'|'poisoned'|'safe';
 const phase = ref<Phase>('idle');
@@ -195,10 +208,19 @@ function runDiceAnim() {
   const poi = (props.result as any).punishment.livesLost > 0;
   setTimeout(() => { phase.value = 'lift';  sound.bidConfirm(); },  400);
   setTimeout(() => { phase.value = 'drink'; sound.glassCrash(); }, 1100);
-  setTimeout(() => {
+  setTimeout(async () => {
     phase.value = poi ? 'poisoned' : 'safe';
-    if (poi) { sound.poisoned(); inkSplash(); } else { sound.guzheng(); fireConfetti(); }
-    canClose.value = true;
+    if (poi) {
+      sound.poisoned(); inkSplash();
+      canClose.value = true;
+    } else {
+      const q = getToastQuote(loserCharacterId.value);
+      toastQuote.value = q.text;
+      toastAudioSrc.value = q.audio;
+      sound.guzheng(); fireConfetti();
+      await playToastAudio(q.audio);
+      canClose.value = true;
+    }
   }, 2000);
 }
 
@@ -244,10 +266,19 @@ function startDrinkAnim(poi: boolean | null) {
   }, 2000);
 }
 
-function showFinalResult(poi: boolean) {
+async function showFinalResult(poi: boolean) {
   phase.value = poi ? 'poisoned' : 'safe';
-  if (poi) { sound.poisoned(); inkSplash(); } else { sound.guzheng(); fireConfetti(); }
-  canClose.value = true;
+  if (poi) {
+    sound.poisoned(); inkSplash();
+    canClose.value = true;
+  } else {
+    const q = getToastQuote(loserCharacterId.value);
+    toastQuote.value = q.text;
+    toastAudioSrc.value = q.audio;
+    sound.guzheng(); fireConfetti();
+    await playToastAudio(q.audio);
+    canClose.value = true;
+  }
 }
 
 function chooseBotlle(idx: number) {

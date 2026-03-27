@@ -140,6 +140,7 @@ watch(() => unifiedFeed.value.length, async () => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* ── 消息列表 ── */

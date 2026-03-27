@@ -119,6 +119,20 @@ function chatSend() {
   play('sine', 880, 0.05, 0.1);
 }
 
+/**
+ * 播放祝酒词语音 MP3，返回 Promise，在音频播放结束（或失败）后 resolve。
+ * @param src 音频路径，如 /audio/toast/general_01.mp3
+ */
+export function playToastAudio(src: string): Promise<void> {
+  return new Promise((resolve) => {
+    const audio = new Audio(src);
+    audio.volume = 0.85;
+    audio.onended = () => resolve();
+    audio.onerror = () => resolve(); // 出错时也继续游戏流程
+    audio.play().catch(() => resolve());
+  });
+}
+
 export const sound = {
   guzheng,
   glassCrash,

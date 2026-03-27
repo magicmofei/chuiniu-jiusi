@@ -128,30 +128,32 @@
       <div v-if="store.phase==='bidding' && store.isSpectator" class="spectator-waiting">观战中 · 等待玩家操作…</div>
     </section>
 
-    <!-- ── 统一战局+聊天区 ── -->
+    <!-- ── 战局 + 聊天双栏区 ── -->
     <section class="log-strip">
-      <button class="log-toggle" @click="showLog=!showLog">
-        <span class="log-label">📜 战局 · 闲话</span>
-        <span class="log-latest">{{ store.gameLog[0] ?? '— 静候开局 —' }}</span>
-        <span class="log-arrow">{{ showLog ? '▼' : '▲' }}</span>
-      </button>
-      <transition name="log-expand">
-        <div v-if="showLog" class="log-expanded"><GameLog :hide-input="true" /></div>
-      </transition>
-      <!-- 常驻聊天输入区 -->
-      <div class="log-persistent-input">
-        <div class="log-emoji-bar">
-          <button v-for="e in persistentEmojis" :key="e" @click="persistentSendEmoji(e)" class="log-emoji-btn">{{ e }}</button>
+      <div class="log-dual">
+        <!-- 左：战局记录 -->
+        <div class="log-battle-col">
+          <div class="log-col-header">📜 战局</div>
+          <GameLog :hide-input="true" />
         </div>
-        <div class="log-input-row">
-          <input
-            v-model="persistentInput"
-            @keyup.enter="persistentSend"
-            maxlength="60"
-            placeholder="说点什么…"
-            class="log-input"
-          />
-          <button @click="persistentSend" class="btn-gold log-send-btn">发</button>
+        <!-- 右：闲话聊天 -->
+        <div class="log-chat-col">
+          <div class="log-col-header">💬 闲话</div>
+          <div class="log-persistent-input">
+            <div class="log-emoji-bar">
+              <button v-for="e in persistentEmojis" :key="e" @click="persistentSendEmoji(e)" class="log-emoji-btn">{{ e }}</button>
+            </div>
+            <div class="log-input-row">
+              <input
+                v-model="persistentInput"
+                @keyup.enter="persistentSend"
+                maxlength="60"
+                placeholder="说点什么…"
+                class="log-input"
+              />
+              <button @click="persistentSend" class="btn-gold log-send-btn">发</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -193,10 +195,11 @@ import DealingOverlay from '../components/DealingOverlay.vue';
 import { sound } from '../utils/useSound';
 import { replay } from '../utils/ReplayRecorder';
 import { inkSplash } from '../utils/useConfetti';
+import { preloadToastAudio } from '../utils/toastQuotes';
 
 const router = useRouter();
 const store  = useGameStore();
-const showLog       = ref(false);
+
 const persistentInput = ref('');
 const persistentEmojis = ['😂','🤣','😤','🤡','💀','🍶','👀','🫣','😱','🎉'];
 function persistentSend() {
@@ -236,6 +239,11 @@ watch(() => store.room?.currentCardBid, (v, old) => {
 });
 watch(() => store.room?.round, (newRound, oldRound) => {
   if (newRound && newRound !== oldRound && store.gameMode === 'card') showDealing.value = true;
+  // 回合开始后偷偷预加载本人角色的祝酒词语音，无感知
+  if (newRound && newRound !== oldRound) {
+    const myCharacterId = store.me?.characterId ?? store.selectedCharacter?.id ?? null;
+    preloadToastAudio(myCharacterId);
+  }
 });
 
 // ── 麻将式座位分配 ──────────────────────────────────────────
@@ -512,59 +520,94 @@ onMounted(() => {
 }
 .spectator-waiting { text-align: center; font-size: 0.68rem; opacity: 0.4; letter-spacing: 0.12em; padding: 0.5rem 0; }
 
-/* ── 战局记录折叠条 ── */
-.log-strip { flex-shrink: 0; border-top: 1px solid rgba(212,168,67,0.1); }
-.log-toggle { width: 100%; display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.75rem; background: rgba(0,0,0,0.25); border: none; cursor: pointer; }
-.log-label  { font-size: 0.62rem; color: var(--gold); opacity: 0.6; flex-shrink: 0; letter-spacing: 0.1em; }
-.log-latest { font-size: 0.62rem; color: var(--parchment); opacity: 0.4; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.log-arrow  { font-size: 0.58rem; color: var(--ink-light); opacity: 0.5; flex-shrink: 0; }
-.log-expanded { max-height: 45vh; overflow-y: auto; padding: 0 0.6rem 0.4rem; }
-.log-expand-enter-active, .log-expand-leave-active { transition: max-height 0.3s ease, opacity 0.22s ease; }
-.log-expand-enter-from, .log-expand-leave-to { max-height: 0; opacity: 0; }
-
-/* ── 常驻输入区 ── */
-.log-persistent-input {
+/* ── 战局+聊天双栏区 ── */
+.log-strip {
+  flex-shrink: 0;
   border-top: 1px solid rgba(212,168,67,0.1);
   background: rgba(0,0,0,0.18);
 }
+.log-dual {
+  display: flex;
+  height: 9rem;
+}
+
+/* 左栏：战局 */
+.log-battle-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(212,168,67,0.12);
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* 右栏：聊天 */
+.log-chat-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* 列标题 */
+.log-col-header {
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  color: var(--gold);
+  opacity: 0.5;
+  padding: 0.18rem 0.5rem 0.1rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(212,168,67,0.08);
+}
+
+/* ── 常驻输入区（右栏内） ── */
+.log-persistent-input {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: transparent;
+}
 .log-emoji-bar {
   display: flex;
-  gap: 0.22rem;
-  padding: 0.22rem 0.75rem 0.1rem;
+  gap: 0.15rem;
+  padding: 0.12rem 0.4rem 0.05rem;
   flex-wrap: wrap;
 }
 .log-emoji-btn {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 1rem;
-  padding: 0.1rem;
+  font-size: 0.88rem;
+  padding: 0.05rem;
   transition: transform 0.12s;
   line-height: 1;
 }
 .log-emoji-btn:active { transform: scale(0.82); }
 .log-input-row {
   display: flex;
-  gap: 0.4rem;
-  padding: 0.28rem 0.75rem calc(env(safe-area-inset-bottom, 0px) + 0.28rem);
+  gap: 0.3rem;
+  padding: 0.2rem 0.4rem calc(env(safe-area-inset-bottom, 0px) + 0.2rem);
 }
 .log-input {
   flex: 1;
-  padding: 0.35rem 0.65rem;
-  border-radius: 0.45rem;
+  padding: 0.28rem 0.5rem;
+  border-radius: 0.4rem;
   background: rgba(0,0,0,0.4);
   border: 1px solid rgba(255,255,255,0.07);
   color: var(--parchment);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-family: inherit;
   outline: none;
   transition: border-color 0.2s;
+  min-width: 0;
 }
 .log-input:focus { border-color: rgba(212,168,67,0.4); }
 .log-input::placeholder { color: rgba(255,255,255,0.22); }
 .log-send-btn {
-  padding: 0.3rem 0.75rem;
-  font-size: 0.78rem;
+  padding: 0.22rem 0.5rem;
+  font-size: 0.72rem;
   flex-shrink: 0;
 }
 
