@@ -128,16 +128,32 @@ app.get('/api/room/:roomId', (req, res) => {
 });
 
 // ── AI 行动调度（延迟执行，给前端时间展示）────────────────
-function scheduleAIAction(roomId: string, delayMs = 1500): void {
+// 随机延迟 1000-3000ms，模拟真实思考节奏
+function aiDelay(): number {
+  return 1000 + Math.floor(Math.random() * 2000);
+}
+
+function scheduleAIAction(roomId: string, delayMs?: number): void {
+  const delay = delayMs ?? aiDelay();
   setTimeout(() => {
     const room = rm.getRoom(roomId);
-    if (!room || room.phase !== 'bidding') return;
+    if (!room) return;
+
+    // phase 不是 bidding 时的处理：
+    // - gameOver / waiting：终止，不再调度
+    // - 其他过渡状态（rolling/punishment/result/challenge）：稍后重试，防止卡死
+    if (room.phase !== 'bidding') {
+      if (room.phase !== 'gameOver' && room.phase !== 'waiting') {
+        setTimeout(() => scheduleAIAction(roomId), 800);
+      }
+      return;
+    }
+
     const engine = rm.getEngine(roomId);
     if (!engine) return;
 
     const currentPlayer = engine.getCurrentPlayer();
     if (!currentPlayer) return;
-
     if (!currentPlayer.isAI) return;
 
     const decision = engine.aiDecide(currentPlayer.id);
@@ -147,7 +163,7 @@ function scheduleAIAction(roomId: string, delayMs = 1500): void {
       if ('error' in res) {
         console.warn(`[AI质疑失败] ${res.error}，尝试重新调度`);
         const retryPlayer = engine.getCurrentPlayer();
-        if (retryPlayer?.isAI) scheduleAIAction(roomId, 1000);
+        if (retryPlayer?.isAI) scheduleAIAction(roomId, aiDelay());
         return;
       }
       broadcastChallengeResult(roomId, res.result, res.playerPrivateData);
@@ -158,6 +174,8 @@ function scheduleAIAction(roomId: string, delayMs = 1500): void {
         const res = engine.challenge(currentPlayer.id);
         if ('error' in res) {
           console.warn(`[AI降级质疑也失败] ${res.error}`);
+          // 兜底重新调度，防止游戏卡死
+          scheduleAIAction(roomId, aiDelay());
           return;
         }
         broadcastChallengeResult(roomId, res.result, res.playerPrivateData);
@@ -167,9 +185,9 @@ function scheduleAIAction(roomId: string, delayMs = 1500): void {
       io.to(roomId).emit('game:stateUpdate', updatedRoom);
 
       const next = engine.getCurrentPlayer();
-      if (next?.isAI) scheduleAIAction(roomId, 1200);
+      if (next?.isAI) scheduleAIAction(roomId, aiDelay());
     }
-  }, delayMs);
+  }, delay);
 }
 
 // ── 结算选酒结果（人类和AI共用）────────────────────────────
@@ -283,7 +301,7 @@ function startNextRound(roomId: string): void {
     });
   });
   const firstPlayer = engine.getCurrentPlayer();
-  scheduleAIAction(roomId, 2500);
+  if (firstPlayer?.isAI) scheduleAIAction(roomId);
   console.log(`[下一回合] 回合 ${roundData.room.round} 开始，首个行动者: ${firstPlayer?.name ?? '未知'}（isAI=${firstPlayer?.isAI ?? false}）`);
 }
 
@@ -394,7 +412,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     console.log(`[开局] 房间 ${roomId} 第1回合开始（模式=${room.mode}）`);
 
     const firstPlayer = engine.getCurrentPlayer();
-    if (firstPlayer?.isAI) scheduleAIAction(roomId, 1200);
+    if (firstPlayer?.isAI) scheduleAIAction(roomId);
   });
 
   // ── 骰子模式：叫牌 ───────────────────────────────────────
@@ -552,7 +570,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     console.log(`[房主开局] 房间 ${res.roomId} 强制开始（${res.room.players.length}人）`);
 
     const firstPlayer = engine.getCurrentPlayer();
-    if (firstPlayer?.isAI) scheduleAIAction(res.roomId, 1200);
+    if (firstPlayer?.isAI) scheduleAIAction(res.roomId);
   });
 
   // ── 聊天 ─────────────────────────────────────────────────
@@ -596,7 +614,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
         console.log(`[AI接管] 玩家 ${_pid} 超时，AI接替`);
         const engine = rm.getEngine(rid);
         const cur = engine?.getCurrentPlayer();
-        if (cur?.isAI) scheduleAIAction(rid, 800);
+        if (cur?.isAI) scheduleAIAction(rid);
       }
     );
     if (!roomId) return;

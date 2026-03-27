@@ -40,7 +40,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
-import { playDealingSound } from '../utils/useSound';
+
 
 const props = defineProps<{
   players: { id: string; name: string }[];
@@ -71,19 +71,37 @@ function fanCardStyle(_seatIndex: number, cardIndex: number): Record<string, str
 
 let dealTimer: ReturnType<typeof setInterval>;
 let hideTimer: ReturnType<typeof setTimeout>;
+let dealingAudio: HTMLAudioElement | null = null;
 
 onMounted(() => {
-  playDealingSound();
+  // 持有音频引用，以便发牌完成后精确停止
+  dealingAudio = new Audio('/audio/poker1.mp3');
+  dealingAudio.volume = 0.7;
+  dealingAudio.play().catch(() => {});
+
   const n = props.players.length;
   const total = props.totalCards;
-  // 逐张发牌：每张间隔 200ms，按 player0-card1, player1-card1 … player0-card2 … 顺序
+  // 逐张发牌：每张间隔 180ms，按 player0-card1, player1-card1 … player0-card2 … 顺序
   let step = 0;
   const totalSteps = n * total;
 
   dealTimer = setInterval(() => {
     if (step >= totalSteps) {
       clearInterval(dealTimer);
-      // 展示一下发好的牌，1s 后淡出
+      // 发牌完成 → 立即停止音效（淡出）
+      if (dealingAudio) {
+        const audio = dealingAudio;
+        // 短暂淡出：100ms 内音量降到 0 再 pause
+        const fadeOut = setInterval(() => {
+          if (audio.volume > 0.05) {
+            audio.volume = Math.max(0, audio.volume - 0.15);
+          } else {
+            audio.pause();
+            clearInterval(fadeOut);
+          }
+        }, 16);
+      }
+      // 展示一下发好的牌，900ms 后淡出覆盖层
       hideTimer = setTimeout(() => {
         visible.value = false;
         setTimeout(() => emit('done'), 400);
@@ -100,6 +118,10 @@ onMounted(() => {
 onUnmounted(() => {
   clearInterval(dealTimer);
   clearTimeout(hideTimer);
+  if (dealingAudio) {
+    dealingAudio.pause();
+    dealingAudio = null;
+  }
 });
 </script>
 

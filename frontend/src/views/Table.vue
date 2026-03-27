@@ -249,7 +249,8 @@ function triggerOpponentFly(stack: { playerId: string; playerName: string; count
   // Destination: center of TableArea
   let destX = window.innerWidth  / 2 - cardWidth  / 2;
   let destY = window.innerHeight / 3 - cardHeight / 2;
-  const tableEl = tableAreaRef.value?.$el as HTMLElement | undefined;
+  const tableElRaw = tableAreaRef.value?.$el;
+  const tableEl = tableElRaw instanceof HTMLElement ? tableElRaw : null;
   if (tableEl) {
     const tr = tableEl.getBoundingClientRect();
     destX = tr.left + tr.width  / 2 - cardWidth  / 2;
@@ -304,7 +305,8 @@ function onCardPlayWithRects(payload: { cards: CardValue[]; rects: DOMRect[] }) 
   // Get destination: center of the TableArea element (or center of screen as fallback)
   let destX = window.innerWidth / 2;
   let destY = window.innerHeight / 3;
-  const tableEl = tableAreaRef.value?.$el as HTMLElement | undefined;
+  const tableElRaw = tableAreaRef.value?.$el;
+  const tableEl = tableElRaw instanceof HTMLElement ? tableElRaw : null;
   if (tableEl) {
     const tableRect = tableEl.getBoundingClientRect();
     destX = tableRect.left + tableRect.width / 2;
@@ -348,6 +350,31 @@ function persistentSendEmoji(e: string) { store.sendChat(e, 'emoji'); sound.chat
 const soundEnabled  = ref(localStorage.getItem('chuiniu_sound') !== 'off');
 const showDealing   = ref(false);
 
+// ── 游戏内 BGM（喻晓庆 - 人在草木间）──────────────────────────
+// 游戏开始第30秒后播放，音量50%，仅播放一遍
+const gameBgm = new Audio('/audio/game-bgm.mp3');
+gameBgm.loop   = false;
+gameBgm.volume = 0.5;
+let gameBgmTimer: ReturnType<typeof setTimeout> | null = null;
+let gameBgmStarted = false;
+
+function startGameBgmTimer() {
+  if (gameBgmStarted) return;
+  gameBgmStarted = true;
+  gameBgmTimer = setTimeout(() => {
+    if (soundEnabled.value) {
+      gameBgm.play().catch(() => {});
+    }
+  }, 30_000);
+}
+
+function stopGameBgm() {
+  if (gameBgmTimer) { clearTimeout(gameBgmTimer); gameBgmTimer = null; }
+  gameBgm.pause();
+  gameBgm.currentTime = 0;
+  gameBgmStarted = false;
+}
+
 // ── 质疑提示 ─────────────────────────────────────────────
 const challengeFlash = ref<string | null>(null);
 let challengeFlashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -358,7 +385,28 @@ function showChallengeFlash(text: string, duration = 1400) {
   challengeFlashTimer = setTimeout(() => { challengeFlash.value = null; }, duration);
 }
 
-watch(soundEnabled, v => localStorage.setItem('chuiniu_sound', v ? 'on' : 'off'));
+watch(soundEnabled, v => {
+  localStorage.setItem('chuiniu_sound', v ? 'on' : 'off');
+  // 静音时暂停游戏BGM，开启时若计时器已触发则恢复
+  if (!v) {
+    gameBgm.pause();
+  } else if (gameBgmStarted && gameBgm.paused && gameBgm.currentTime > 0) {
+    gameBgm.play().catch(() => {});
+  }
+});
+
+// 游戏开始（第1回合发牌）时启动30秒计时器
+// game:start / game:roundStart 都会使 round 从 0→1，此处监听 round===1 精准触发
+watch(() => store.room?.round, (newRound, oldRound) => {
+  if (newRound === 1 && (oldRound === undefined || oldRound === 0)) {
+    startGameBgmTimer();
+  }
+});
+watch(() => store.phase, (p) => {
+  if (p === 'gameOver') {
+    stopGameBgm();
+  }
+});
 watch(() => store.challengeResult, (result) => {
   if (!result) return;
   // 若出牌者牌为真（质疑方输），将横幅替换为「XX 质疑失败」
@@ -435,14 +483,22 @@ function onChallenge() {
   if (soundEnabled.value) { sound.challengePress(); inkSplash(); }
   // 立即显示「XX 质疑了 XX」横幅，不等待服务端结果
   const challengerName = store.me?.name ?? '';
+  const bidderId = store.gameMode === 'dice'
+    ? store.room?.currentDiceBid?.playerId
+    : store.room?.currentCardBid?.playerId;
   const bidderName = store.gameMode === 'dice'
     ? (store.room?.currentDiceBid?.playerName ?? '')
     : (store.room?.currentCardBid?.playerName ?? '');
-  showChallengeFlash(`${challengerName} 质疑了 ${bidderName}`, 1800);
+  // 防止出现「XX 质疑了 XX」（自己质疑自己）的异常文字
+  if (bidderName && bidderId !== store.myId) {
+    showChallengeFlash(`${challengerName} 质疑了 ${bidderName}`, 1800);
+  } else if (challengerName) {
+    showChallengeFlash(`${challengerName} 发起质疑！`, 1800);
+  }
   store.gameMode === 'dice' ? store.diceChallenge() : store.cardChallenge();
 }
 // onCardPlay removed – replaced by onCardPlayWithRects for fly animation
-function backToLobby() { store.disconnect(); router.push('/'); }
+function backToLobby() { stopGameBgm(); store.disconnect(); router.push('/'); }
 function confirmLeave() {
   if (store.phase === 'waiting' || store.phase === 'gameOver') {
     backToLobby();
