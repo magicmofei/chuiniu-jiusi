@@ -114,8 +114,8 @@ const CHARACTER_TOASTS: Record<string, ToastQuote[]> = {
     { text: '「此生谁料，心在天山，身老沧洲——今身在酒肆，且饮好酒！」',             audio: '/audio/toast/luyou_03.mp3' },
   ],
   linbu: [
-    { text: '「疏影横斜水清浅，暗香浮动月黄昏——此酒亦有暗香，好酒。」', audio: '/audio/toast/general_01.mp3' },
-    { text: '「以梅为妻，以鹤为子——今日以好酒为友，亦足矣。」',         audio: '/audio/toast/general_02.mp3' },
+    { text: '「疏影横斜水清浅，暗香浮动月黄昏——此酒亦有暗香，好酒。」', audio: '/audio/toast/linbu_01.mp3' },
+    { text: '「以梅为妻，以鹤为子——今日以好酒为友，亦足矣。」',         audio: '/audio/toast/linbu_02.mp3' },
   ],
   zhaojizhui: [
     { text: '「天下一人挥此笔，今日天下一人饮此酒——朕说好喝，便是好喝！」', audio: '/audio/toast/zhaojizhui_01.mp3' },

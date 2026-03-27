@@ -148,7 +148,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import type { ChallengeResult } from '../stores/gameStore';
 import { useGameStore } from '../stores/gameStore';
-import { sound, playToastAudio, playChooseWineSound, playDrinkSound } from '../utils/useSound';
+import { playToastAudio, playChooseWineSound, playDrinkSound } from '../utils/useSound';
 import { inkSplash, fireConfetti } from '../utils/useConfetti';
 import { getToastQuote } from '../utils/toastQuotes';
 
@@ -209,14 +209,14 @@ function tryClose() { if (canClose.value) emit('close'); }
 // ── 骰子模式动画 ──────────────────────────────────────────
 function runDiceAnim() {
   const poi = (props.result as any).punishment.livesLost > 0;
-  setTimeout(() => { phase.value = 'lift';  sound.bidConfirm(); },  400);
-  setTimeout(() => { phase.value = 'drink'; sound.glassCrash(); }, 1100);
+  setTimeout(() => { phase.value = 'lift'; },  400);
+  setTimeout(() => { phase.value = 'drink'; playDrinkSound(); }, 1100);
   setTimeout(async () => {
     phase.value = poi ? 'poisoned' : 'safe';
     if (poi) {
       const q = getToastQuote(loserCharacterId.value);
       poisonQuote.value = q.text;
-      sound.poisoned(); inkSplash();
+      inkSplash();
       store.voicePlaying = true;
       await playToastAudio(q.audio);
       store.voiceEnded();
@@ -225,7 +225,7 @@ function runDiceAnim() {
       const q = getToastQuote(loserCharacterId.value);
       toastQuote.value = q.text;
       toastAudioSrc.value = q.audio;
-      sound.guzheng(); fireConfetti();
+      fireConfetti();
       store.voicePlaying = true;
       await playToastAudio(q.audio);
       store.voiceEnded();
@@ -264,8 +264,8 @@ function startDrinkAnim(poi: boolean | null) {
   drinkAnimStarted.value = true;
   bottlePhase.value = 'drinking';
   phase.value = 'idle';
-  setTimeout(() => { phase.value = 'lift';  sound.bidConfirm(); }, 300);
-  setTimeout(() => { phase.value = 'drink'; sound.glassCrash(); playDrinkSound(); }, 1100);
+  setTimeout(() => { phase.value = 'lift'; }, 300);
+  setTimeout(() => { phase.value = 'drink'; playDrinkSound(); }, 1100);
   setTimeout(() => {
     phase.value = 'reveal';
     if (poi !== null) {
@@ -281,7 +281,7 @@ async function showFinalResult(poi: boolean) {
   if (poi) {
     const q = getToastQuote(loserCharacterId.value);
     poisonQuote.value = q.text;
-    sound.poisoned(); inkSplash();
+    inkSplash();
     store.voicePlaying = true;
     await playToastAudio(q.audio);
     store.voiceEnded();
@@ -290,7 +290,7 @@ async function showFinalResult(poi: boolean) {
     const q = getToastQuote(loserCharacterId.value);
     toastQuote.value = q.text;
     toastAudioSrc.value = q.audio;
-    sound.guzheng(); fireConfetti();
+    fireConfetti();
     store.voicePlaying = true;
     await playToastAudio(q.audio);
     store.voiceEnded();

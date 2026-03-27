@@ -73,7 +73,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue';
 import { useGameStore } from '../stores/gameStore';
-import { sound } from '../utils/useSound';
+
 
 defineProps<{ expanded?: boolean }>();
 const emit = defineEmits<{ toggle: []; close: [] }>();
@@ -93,11 +93,10 @@ const quickTaunts = [
 function send() {
   if (!input.value.trim()) return;
   store.sendChat(input.value.trim());
-  sound.chatSend();
   input.value = '';
 }
-function sendEmoji(e: string) { store.sendChat(e, 'emoji'); sound.chatSend(); }
-function sendTaunt(q: string) { store.sendChat(q); sound.chatSend(); showTaunts.value = false; }
+function sendEmoji(e: string) { store.sendChat(e, 'emoji'); }
+function sendTaunt(q: string) { store.sendChat(q); showTaunts.value = false; }
 
 watch(() => store.chatMessages.length, async () => {
   await nextTick();

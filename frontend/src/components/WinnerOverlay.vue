@@ -59,7 +59,6 @@
 <script setup lang="ts">
 import { watch } from 'vue';
 import { victoryFireworks } from '../utils/useConfetti';
-import { sound } from '../utils/useSound';
 import { replay } from '../utils/ReplayRecorder';
 
 const props = defineProps<{
@@ -72,7 +71,6 @@ const emit = defineEmits<{ close: [] }>();
 
 watch(() => props.show, (v) => {
   if (v) {
-    sound.victory();
     setTimeout(() => victoryFireworks(), 400);
     replay.save();
   }

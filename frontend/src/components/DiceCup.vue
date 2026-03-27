@@ -59,7 +59,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue';
 import type { DiceFace } from '../stores/gameStore';
-import { sound } from '../utils/useSound';
+
 
 
 const props = defineProps<{ dice: DiceFace[]; rolling?: boolean }>();
@@ -74,12 +74,11 @@ function countOf(f: number) {
   return props.dice.filter(d => d === f).length;
 }
 
-// 摇骰音效 + 落定粒子
+// 落定粒子
 watch(() => props.rolling, async (r) => {
   if (r) {
-    sound.diceRoll();
+    // (骰子滚动音效已移除)
   } else if (props.dice.length) {
-    sound.diceSettle();
     justLanded.value = true;
     setTimeout(() => { justLanded.value = false; }, 800);
     // Canvas 粒子特效

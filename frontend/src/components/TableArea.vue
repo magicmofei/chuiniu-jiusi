@@ -73,7 +73,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { CardChallengeResult } from '../stores/gameStore';
-import { sound } from '../utils/useSound';
+
 
 interface TableStack {
   playerId: string;
@@ -113,7 +113,6 @@ watch(isRevealing, (val) => {
       const next = [...cardFlipped.value];
       next[i] = true;
       cardFlipped.value = next;
-      sound.bidConfirm();
     }, 400 + i * 300);
   }
 }, { immediate: true });
