@@ -20,7 +20,11 @@
         ]"
       >
         <span class="poker-card__corner poker-card__corner--top">{{ cardCorner(card) }}</span>
-        <span class="poker-card__center">{{ cardCenter(card) }}</span>
+        <svg class="poker-card__cloud" viewBox="0 0 56 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M4 62 Q11 52 18 62 Q25 72 32 62 Q39 52 46 62 Q53 72 56 62" stroke="currentColor" stroke-width="1.4" fill="none"/>
+          <path d="M6 46 Q14 36 22 46 Q30 56 38 46 Q46 36 52 46" stroke="currentColor" stroke-width="1.1" fill="none"/>
+          <path d="M10 30 Q18 22 26 30 Q34 38 42 30" stroke="currentColor" stroke-width="0.9" fill="none"/>
+        </svg>
         <span class="poker-card__corner poker-card__corner--bottom">{{ cardCorner(card) }}</span>
       </button>
 
@@ -89,10 +93,6 @@ function cardColor(card: CardValue) {
 function cardCorner(card: CardValue) {
   return card === 'Joker' ? '★' : card;
 }
-function cardCenter(card: CardValue) {
-  if (card === 'Joker') return '🃏';
-  return card;
-}
 </script>
 
 <style scoped>
@@ -158,12 +158,31 @@ function cardCenter(card: CardValue) {
   font-size: 0.9rem;
   font-weight: 700;
   line-height: 1;
+  z-index: 2;
 }
 .poker-card__corner--top    { top: 0.25rem; left: 0.3rem; }
 .poker-card__corner--bottom { bottom: 0.25rem; right: 0.3rem; transform: rotate(180deg); }
-.poker-card__center {
-  font-size: 1.6rem;
-  line-height: 1;
-  font-weight: 900;
+
+/* 云纹 SVG */
+.poker-card__cloud {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: rgba(180, 140, 60, 0.13);
+  pointer-events: none;
+  z-index: 1;
+}
+/* 古纸做旧遮罩 */
+.poker-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 0.5rem;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(255,240,180,0.18) 0%, transparent 80%),
+    linear-gradient(160deg, rgba(255,245,200,0.12) 0%, rgba(200,170,100,0.06) 100%);
+  pointer-events: none;
+  z-index: 1;
 }
 </style>

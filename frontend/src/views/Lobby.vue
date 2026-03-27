@@ -1,11 +1,11 @@
 <template>
-  <div class="min-h-screen flex flex-col items-center justify-center px-4 py-10 relative overflow-hidden">
+  <div class="min-h-screen flex flex-col items-center justify-center px-4 py-10 relative overflow-hidden" style="min-height:100dvh">
     <!-- 环境背景图 -->
     <div class="lobby-cover-bg" aria-hidden="true"></div>
     <!-- 渐变遮罩：让背景与UI融合 -->
     <div class="lobby-overlay" aria-hidden="true"></div>
 
-    <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
+    <div class="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
       <span class="absolute top-8 left-8 text-8xl opacity-[0.03] rotate-12">竹</span>
       <span class="absolute bottom-10 right-10 text-9xl opacity-[0.03] -rotate-12">酒</span>
     </div>
@@ -295,9 +295,8 @@ watch(() => store.phase, (p) => {
   background-size: cover;
   background-position: center 30%;
   background-repeat: no-repeat;
-  /* 轻微暗化，保留氛围色 */
   filter: brightness(0.55) saturate(1.1);
-  transform: scale(1.04);
+  /* 不使用 scale，改用 inset 负值来覆盖边缘，避免溢出 */
   z-index: 0;
 }
 
@@ -329,6 +328,9 @@ watch(() => store.phase, (p) => {
   flex-direction: column;
   align-items: center;
   width: 100%;
+  max-width: 100vw;
+  padding-left: 1rem;
+  padding-right: 1rem;
   pointer-events: auto;
 }
 </style>

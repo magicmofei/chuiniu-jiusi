@@ -20,9 +20,6 @@
       <div class="top-bar__right">
         <span :style="{color:store.connected?'var(--jade)':'var(--vermillion)'}">{{ store.connected?'●':'○' }}</span>
         <button @click="soundEnabled=!soundEnabled" class="icon-btn">{{ soundEnabled?'🔊':'🔇' }}</button>
-        <button @click="toggleChat" class="icon-btn chat-btn">
-          💬<span v-if="unreadCount>0" class="unread-badge">{{ unreadCount }}</span>
-        </button>
         <button v-if="store.phase!=='gameOver'" @click="confirmLeave" class="leave-btn">离开</button>
       </div>
     </header>
@@ -32,7 +29,7 @@
 
       <!-- 上方对面玩家 -->
       <div class="seat-top">
-        <MiniSeat v-if="seats.top" :player="seats.top" :is-me="seats.top.id===store.myId" :is-current="isCurrentPlayer(seats.top.id)" orientation="top" />
+        <MiniSeat v-if="seats.top" :player="seats.top" :is-me="seats.top.id===store.myId" :is-current="isCurrentPlayer(seats.top.id)" orientation="top" :bottle-count="store.room?.bottleRemaining?.[seats.top.id]" />
         <div v-else class="empty-seat empty-seat--top">🪑</div>
       </div>
 
@@ -41,7 +38,7 @@
 
         <!-- 左侧玩家 -->
         <div class="seat-left">
-          <MiniSeat v-if="seats.left" :player="seats.left" :is-me="seats.left.id===store.myId" :is-current="isCurrentPlayer(seats.left.id)" orientation="left" />
+          <MiniSeat v-if="seats.left" :player="seats.left" :is-me="seats.left.id===store.myId" :is-current="isCurrentPlayer(seats.left.id)" orientation="left" :bottle-count="store.room?.bottleRemaining?.[seats.left.id]" />
           <div v-else class="empty-seat empty-seat--side">🪑</div>
         </div>
 
@@ -91,14 +88,14 @@
 
         <!-- 右侧玩家 -->
         <div class="seat-right">
-          <MiniSeat v-if="seats.right" :player="seats.right" :is-me="seats.right.id===store.myId" :is-current="isCurrentPlayer(seats.right.id)" orientation="right" />
+          <MiniSeat v-if="seats.right" :player="seats.right" :is-me="seats.right.id===store.myId" :is-current="isCurrentPlayer(seats.right.id)" orientation="right" :bottle-count="store.room?.bottleRemaining?.[seats.right.id]" />
           <div v-else class="empty-seat empty-seat--side">🪑</div>
         </div>
       </div>
 
       <!-- 下方自己 -->
       <div class="seat-bottom">
-        <MiniSeat v-if="seats.bottom" :player="seats.bottom" :is-me="seats.bottom.id===store.myId" :is-current="isCurrentPlayer(seats.bottom.id)" orientation="bottom" />
+        <MiniSeat v-if="seats.bottom" :player="seats.bottom" :is-me="seats.bottom.id===store.myId" :is-current="isCurrentPlayer(seats.bottom.id)" orientation="bottom" :bottle-count="store.room?.bottleRemaining?.[seats.bottom.id]" />
         <div v-else class="empty-seat empty-seat--bottom">🪑</div>
       </div>
 
@@ -131,10 +128,10 @@
       <div v-if="store.phase==='bidding' && store.isSpectator" class="spectator-waiting">观战中 · 等待玩家操作…</div>
     </section>
 
-    <!-- ── 战局记录折叠条 ── -->
+    <!-- ── 统一战局+聊天区 ── -->
     <section class="log-strip">
       <button class="log-toggle" @click="showLog=!showLog">
-        <span class="log-label">📜 战局</span>
+        <span class="log-label">📜 战局 · 闲话</span>
         <span class="log-latest">{{ store.gameLog[0] ?? '— 静候开局 —' }}</span>
         <span class="log-arrow">{{ showLog ? '▼' : '▲' }}</span>
       </button>
@@ -143,18 +140,17 @@
       </transition>
     </section>
 
-    <!-- ── 聊天底部抽屉 ── -->
-    <transition name="chat-drawer">
-      <div v-if="showChat" class="chat-overlay" @click.self="toggleChat">
-        <div class="chat-sheet" :class="chatExpanded ? 'chat-sheet--expanded' : 'chat-sheet--compact'">
-          <ChatPanel :expanded="chatExpanded" @toggle="chatExpanded=!chatExpanded" @close="toggleChat" />
-        </div>
-      </div>
-    </transition>
-
     <!-- ── 浮层 ── -->
     <DealingOverlay v-if="showDealing && store.room" :players="store.room.players" :my-id="store.myId" :total-cards="5" @done="showDealing=false" />
     <PunishmentModal v-if="store.showPunishment && store.challengeResult" :result="store.challengeResult" @close="store.closePunishment()" />
+    <!-- 质疑打断横幅 -->
+    <transition name="challenge-flash">
+      <div v-if="challengeFlash" class="challenge-flash-banner">
+        <span class="cf-icon">⚔️</span>
+        <span class="cf-text">{{ challengeFlash }}</span>
+        <span class="cf-icon">⚔️</span>
+      </div>
+    </transition>
     <transition name="toast">
       <div v-if="store.errorMsg" class="toast-msg">
         {{ store.errorMsg }}
@@ -174,7 +170,6 @@ import DiceCup from '../components/DiceCup.vue';
 import CardHand from '../components/CardHand.vue';
 import CallPanel from '../components/CallPanel.vue';
 import PunishmentModal from '../components/PunishmentModal.vue';
-import ChatPanel from '../components/ChatPanel.vue';
 import GameLog from '../components/GameLog.vue';
 import WinnerOverlay from '../components/WinnerOverlay.vue';
 import TableArea from '../components/TableArea.vue';
@@ -185,24 +180,23 @@ import { inkSplash } from '../utils/useConfetti';
 
 const router = useRouter();
 const store  = useGameStore();
-const showChat      = ref(false);
-const chatExpanded  = ref(false);
 const showLog       = ref(false);
 const soundEnabled  = ref(localStorage.getItem('chuiniu_sound') !== 'off');
 const showDealing   = ref(false);
-const lastReadCount = ref(0);
 
-const unreadCount = computed(() =>
-  showChat.value ? 0 : store.chatMessages.length - lastReadCount.value
-);
-
-function toggleChat() {
-  showChat.value = !showChat.value;
-  if (showChat.value) lastReadCount.value = store.chatMessages.length;
-  else chatExpanded.value = false;
-}
+// ── 质疑提示（1秒后自动消失）──────────────────────────────
+const challengeFlash = ref<string | null>(null);
+let challengeFlashTimer: ReturnType<typeof setTimeout> | null = null;
 
 watch(soundEnabled, v => localStorage.setItem('chuiniu_sound', v ? 'on' : 'off'));
+watch(() => store.challengeResult, (result) => {
+  if (!result) return;
+  const challenger = result.challengerName;
+  const loser = result.loserNames?.[0] ?? '';
+  challengeFlash.value = `${challenger} 质疑了 ${loser}`;
+  if (challengeFlashTimer) clearTimeout(challengeFlashTimer);
+  challengeFlashTimer = setTimeout(() => { challengeFlash.value = null; }, 1200);
+});
 watch(() => store.room?.currentDiceBid, (v, old) => {
   if (v && v !== old && soundEnabled.value) sound.bidConfirm();
 });
@@ -309,6 +303,7 @@ onMounted(() => {
   overflow: hidden;
   padding-top: env(safe-area-inset-top, 0);
   padding-bottom: env(safe-area-inset-bottom, 0);
+  background-color: #110a05;
 }
 
 /* ── 顶部导航栏 ── */
@@ -500,6 +495,43 @@ onMounted(() => {
 
 /* ── Toast ── */
 .toast-msg { position: fixed; bottom: calc(env(safe-area-inset-bottom,0px) + 1.5rem); left: 50%; transform: translateX(-50%); padding: 0.55rem 1.1rem; border-radius: 0.75rem; z-index: 60; display: flex; align-items: center; gap: 0.6rem; background: var(--vermillion); color: white; font-size: 0.82rem; white-space: nowrap; }
+
+/* ── 质疑打断横幅 ── */
+.challenge-flash-banner {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 1.4rem;
+  background: rgba(10,8,4,0.92);
+  border: 1px solid rgba(192,57,43,0.6);
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(192,57,43,0.2);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+.cf-icon { font-size: 1.1rem; }
+.cf-text {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--parchment);
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+.challenge-flash-enter-active { animation: cfIn 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+.challenge-flash-leave-active { animation: cfOut 0.2s ease; }
+@keyframes cfIn {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes cfOut {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to   { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+}
 
 /* ── 过渡 ── */
 .bid-enter-active, .bid-leave-active { transition: all 0.2s ease; }

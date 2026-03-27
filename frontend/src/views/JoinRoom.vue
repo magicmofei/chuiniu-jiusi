@@ -1,5 +1,5 @@
 <template>
-  <div class="join-bg min-h-screen flex flex-col items-center justify-center px-4 py-10">
+  <div class="join-bg min-h-screen flex flex-col items-center justify-center px-4 py-10 overflow-hidden" style="min-height:100dvh">
     <!-- 装饰字符 -->
     <div class="absolute inset-0 pointer-events-none select-none overflow-hidden" aria-hidden="true">
       <span class="deco deco-1">吹</span>
@@ -211,6 +211,7 @@ function waitForSpectate(): Promise<void> {
 .join-bg {
   background: var(--ink-dark);
   position: relative;
+  overflow: hidden;
 }
 .deco {
   position: absolute;

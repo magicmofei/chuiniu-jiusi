@@ -119,9 +119,19 @@ export class DiceGame extends GameEngine {
     const isGameOver = this.checkGameOver();
     if (!isGameOver) {
       this.room.phase = 'result';
-      // 输家先手（若已淘汰则下一个存活者）
+      // 输家先手：若已被淘汰，则找质疑者的位置（质疑者继续先手）
       const loserIndex = this.room.players.findIndex(p => p.id === loserId);
-      this.room.currentPlayerIndex = loserIndex >= 0 ? loserIndex : 0;
+      if (loserIndex >= 0) {
+        this.room.currentPlayerIndex = loserIndex;
+      } else {
+        // 输家已被淘汰，让质疑者（或其后面第一个存活玩家）先手
+        const challengerIndex = this.room.players.findIndex(p => p.id === challengerId);
+        this.room.currentPlayerIndex = challengerIndex >= 0 ? challengerIndex : 0;
+      }
+      // 越界保护
+      if (this.room.currentPlayerIndex >= this.room.players.length) {
+        this.room.currentPlayerIndex = 0;
+      }
     }
 
     const result: DiceChallengeResult = {

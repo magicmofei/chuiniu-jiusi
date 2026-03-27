@@ -62,6 +62,15 @@ export class CardGame extends GameEngine {
         const extra = this.shuffle(makeFullDeck());
         p.hand = [...p.hand, ...extra].slice(0, HAND_SIZE);
       }
+      // 每回合庄家重新往剩余酒瓶中的一瓶下药
+      // 若玩家还没有酒瓶（首局）则初始化 6 瓶
+      if (!p.bottles || p.bottles.remaining.length === 0) {
+        p.bottles = this.createBottleState();
+      } else {
+        // 保留剩余瓶，只重新随机毒药槽
+        const rem = p.bottles.remaining;
+        p.bottles.poisonSlot = rem[this.secureRandInt(0, rem.length - 1)];
+      }
     });
 
     if (this.room.currentPlayerIndex >= playerCount) {
@@ -171,7 +180,7 @@ export class CardGame extends GameEngine {
     const { remaining, poisonSlot } = loser.bottles;
     if (!remaining.includes(bottleIndex)) return { error: '该酒瓶已不存在或无效' };
 
-    // 移除选中的酒瓶
+    // 移除选中的酒瓶（砸碎）
     loser.bottles.remaining = remaining.filter(i => i !== bottleIndex);
 
     const poisoned = bottleIndex === poisonSlot;
@@ -179,13 +188,14 @@ export class CardGame extends GameEngine {
     if (poisoned) {
       loser.lives -= 1;
       livesLost = 1;
+      // 中毒后酒瓶归零（该玩家若未被淘汰则下局重新获得6瓶）
+      loser.bottles.remaining = [];
     }
-
-    // 无论中毒与否，喝完后重置 6 瓶（核心规则：每次质疑结算后洗牌重发）
-    loser.bottles = this.createBottleState();
+    // 安全时：酒瓶继续减少，不补充，概率随之升高
 
     this.room.pickingPlayerId = null;
 
+    const remainingAfter = loser.bottles.remaining.length;
     const punishment: BottlePunishment = {
       type: 'bottle',
       loserId: playerId,
@@ -195,7 +205,7 @@ export class CardGame extends GameEngine {
       livesLost,
       livesRemaining: loser.lives,
       eliminated: loser.lives <= 0,
-      remainingCount: loser.bottles.remaining.length,
+      remainingCount: remainingAfter,
     };
 
     this.room.lastPunishment = punishment;
@@ -204,9 +214,16 @@ export class CardGame extends GameEngine {
 
     if (!isGameOver) {
       this.room.phase = 'result';
-      // 输家成为下一回合第一个出牌者
+      // 输家成为下一回合第一个出牌者；若已被淘汰则让下一个存活者先手
       const loserIdx = this.room.players.findIndex(p => p.id === playerId);
-      this.room.currentPlayerIndex = loserIdx >= 0 ? loserIdx : 0;
+      if (loserIdx >= 0) {
+        this.room.currentPlayerIndex = loserIdx;
+      } else {
+        // 输家已被淘汰，currentPlayerIndex 保持原值并做越界保护
+        if (this.room.currentPlayerIndex >= this.room.players.length) {
+          this.room.currentPlayerIndex = 0;
+        }
+      }
     }
 
     return punishment;

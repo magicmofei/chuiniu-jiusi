@@ -105,7 +105,6 @@ app.get('/api/rooms', (_req, res) => {
       round: r.round,
     }))
     .sort((a, b) => {
-      // 等待中房间排前面，再按真实玩家数降序
       if (a.phase === 'waiting' && b.phase !== 'waiting') return -1;
       if (b.phase === 'waiting' && a.phase !== 'waiting') return 1;
       return b.realPlayerCount - a.realPlayerCount;
@@ -137,35 +136,75 @@ function scheduleAIAction(roomId: string, delayMs = 1500): void {
     if (!engine) return;
 
     const currentPlayer = engine.getCurrentPlayer();
-    if (!currentPlayer || !currentPlayer.isAI) return;
+    if (!currentPlayer) return;
+
+    if (!currentPlayer.isAI) return;
 
     const decision = engine.aiDecide(currentPlayer.id);
 
     if (decision.action === 'challenge') {
-      // AI 质疑
       const res = engine.challenge(currentPlayer.id);
       if ('error' in res) {
-        console.warn(`[AI质疑失败] ${res.error}`);
+        console.warn(`[AI质疑失败] ${res.error}，尝试重新调度`);
+        const retryPlayer = engine.getCurrentPlayer();
+        if (retryPlayer?.isAI) scheduleAIAction(roomId, 1000);
         return;
       }
-      const { result } = res;
-      // 广播质疑结果
-      broadcastChallengeResult(roomId, result, res.playerPrivateData);
+      broadcastChallengeResult(roomId, res.result, res.playerPrivateData);
     } else {
-      // AI 叫牌
       const err = engine.placeBid(currentPlayer.id, decision.data);
       if (err) {
-        console.warn(`[AI叫牌失败] ${err}`);
+        console.warn(`[AI叫牌失败] ${err}，尝试降级为质疑`);
+        const res = engine.challenge(currentPlayer.id);
+        if ('error' in res) {
+          console.warn(`[AI降级质疑也失败] ${res.error}`);
+          return;
+        }
+        broadcastChallengeResult(roomId, res.result, res.playerPrivateData);
         return;
       }
       const updatedRoom = rm.toPublicView(room);
       io.to(roomId).emit('game:stateUpdate', updatedRoom);
 
-      // 检查下一个是否也是 AI
       const next = engine.getCurrentPlayer();
       if (next?.isAI) scheduleAIAction(roomId, 1200);
     }
   }, delayMs);
+}
+
+// ── 结算选酒结果（人类和AI共用）────────────────────────────
+function resolveBottlePick(
+  roomId: string,
+  loserId: string,
+  loserName: string,
+  bottleIndex: number
+): void {
+  setTimeout(() => {
+    const latestRoom = rm.getRoom(roomId);
+    if (!latestRoom || latestRoom.phase !== 'punishment') return;
+    if (latestRoom.pickingPlayerId !== loserId) return;
+    const latestEngine = rm.getEngine(roomId) as CardGame;
+    if (!latestEngine) return;
+
+    const punishment = latestEngine.pickBottle(loserId, bottleIndex);
+    if ('error' in punishment) {
+      console.warn(`[选酒结算失败] ${punishment.error}`);
+      return;
+    }
+
+    io.to(roomId).emit('card:bottleResult', punishment);
+    io.to(roomId).emit('game:stateUpdate', rm.toPublicView(latestRoom));
+
+    console.log(`[饮酒] ${loserName} 第${bottleIndex + 1}瓶，中毒=${punishment.poisoned}，剩余命=${punishment.livesRemaining}`);
+
+    const postRoom = rm.getRoom(roomId);
+    if (!postRoom) return;
+    if (postRoom.phase === 'gameOver') {
+      io.to(roomId).emit('game:over', { winner: postRoom.winner ?? '', room: rm.toPublicView(postRoom) });
+      return;
+    }
+    setTimeout(() => startNextRound(roomId), 3000);
+  }, 2200);
 }
 
 // ── 广播质疑结果 ─────────────────────────────────────────
@@ -177,7 +216,6 @@ function broadcastChallengeResult(
   const room = rm.getRoom(roomId);
   if (!room) return;
 
-  // 逐玩家发送质疑结果
   room.players.forEach(p => {
     io.to(p.id).emit('player:challenge', result);
   });
@@ -193,52 +231,35 @@ function broadcastChallengeResult(
     return;
   }
 
-  // ── 牌模式：服务端自动随机选酒（无需玩家手动操作）──────
+  // ── 牌模式：让输家手动选酒 ──────────────────────────────
   if (result.type === 'card') {
     const loserId = result.loserId;
     const loserPlayer = room.players.find(p => p.id === loserId);
     if (!loserPlayer || !loserPlayer.bottles) return;
 
-    // 随机选一瓶（服务端决定，保证所有客户端一致）
     const remaining = loserPlayer.bottles.remaining;
-    const bottleIndex = remaining[Math.floor(Math.random() * remaining.length)];
 
-    // 广播「已选瓶」事件，前端播放喝酒动画
-    io.to(roomId).emit('card:bottlePicked', {
-      loserId,
-      loserName: loserPlayer.name,
-      bottleIndex,
-    });
-
-    // 动画结束后结算中毒判定（2.2秒后）
-    setTimeout(() => {
-      const latestRoom = rm.getRoom(roomId);
-      if (!latestRoom || latestRoom.phase !== 'punishment') return;
-      if (latestRoom.pickingPlayerId !== loserId) return;
-      const latestEngine = rm.getEngine(roomId) as CardGame;
-      if (!latestEngine) return;
-
-      const punishment = latestEngine.pickBottle(loserId, bottleIndex);
-      if ('error' in punishment) {
-        console.warn(`[选酒失败] ${punishment.error}`);
-        return;
-      }
-
-      // 广播结果给所有人（含旁观者）
-      io.to(roomId).emit('card:bottleResult', punishment);
-      io.to(roomId).emit('game:stateUpdate', rm.toPublicView(latestRoom));
-
-      console.log(`[饮酒] ${loserPlayer.name} 第${bottleIndex+1}瓶，中毒=${punishment.poisoned}，剩余命=${punishment.livesRemaining}`);
-
-      const postRoom = rm.getRoom(roomId);
-      if (!postRoom) return;
-      if (postRoom.phase === 'gameOver') {
-        io.to(roomId).emit('game:over', { winner: postRoom.winner ?? '', room: rm.toPublicView(postRoom) });
-        return;
-      }
-      // 3秒后自动开始下一回合
-      setTimeout(() => startNextRound(roomId), 3000);
-    }, 2200);
+    if (loserPlayer.isAI) {
+      // AI 输家：随机延迟后自动选酒
+      const bottleIndex = remaining[Math.floor(Math.random() * remaining.length)];
+      setTimeout(() => {
+        io.to(roomId).emit('card:bottlePicked', {
+          loserId,
+          loserName: loserPlayer.name,
+          bottleIndex,
+        });
+        resolveBottlePick(roomId, loserId, loserPlayer.name, bottleIndex);
+      }, 1800);
+    } else {
+      // 人类输家：只发给本人，让其手动选酒
+      io.to(loserId).emit('card:pickBottle', {
+        loserId,
+        loserName: loserPlayer.name,
+        remainingBottles: remaining,
+      });
+      // 广播房间状态让其他人看到等待提示
+      io.to(roomId).emit('game:stateUpdate', rm.toPublicView(room));
+    }
     return;
   }
 
@@ -262,14 +283,13 @@ function startNextRound(roomId: string): void {
     });
   });
   const firstPlayer = engine.getCurrentPlayer();
-  // 延迟需大于前端弹窗关闭动画时间（约 1s）+ 发牌动画（约 0.7s），给前端足够时间应用 roundStart
-  if (firstPlayer?.isAI) scheduleAIAction(roomId, 2500);
+  scheduleAIAction(roomId, 2500);
+  console.log(`[下一回合] 回合 ${roundData.room.round} 开始，首个行动者: ${firstPlayer?.name ?? '未知'}（isAI=${firstPlayer?.isAI ?? false}）`);
 }
 
 
 // ── Socket.io 主连接处理 ──────────────────────────────────
 io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>) => {
-  // 超出最大连接数则拒绝
   if (io.engine.clientsCount > MAX_CONNECTIONS) {
     console.warn(`[拒绝连接] 当前连接数 ${io.engine.clientsCount} 超过上限 ${MAX_CONNECTIONS}`);
     socket.emit('error', '服务器繁忙，请稍后再试');
@@ -278,7 +298,6 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
   }
   console.log(`[连接] ${socket.id}（当前 ${io.engine.clientsCount} 连接）`);
 
-  // 单 socket 级别全局异常捕获（防止单客户端异常崩溃整个服务）
   socket.on('error', (err) => {
     console.error(`[Socket错误] ${socket.id}:`, err);
   });
@@ -294,9 +313,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     cb({ success: true, roomId: res.roomId });
     const room = rm.getRoom(res.roomId)!;
     const spectator = rm.getSpectator(socket.id)!;
-    // 通知房间内其他人有观战者加入
     socket.to(res.roomId).emit('room:spectatorJoined', spectator);
-    // 给观战者发当前房间状态
     io.to(socket.id).emit('room:update', rm.toPublicView(room));
     console.log(`[观战] ${name} 观战房间 ${res.roomId}`);
   });
@@ -320,7 +337,6 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     const room = rm.getRoom(res.roomId)!;
     rm.touchRoom(res.roomId);
     const view = rm.toPublicView(room);
-    // 通知房间所有人（含自己）
     io.to(res.roomId).emit('room:update', view);
     console.log(`[加入] ${name} → 房间 ${res.roomId}（${room.players.length}/${4}人）`);
   });
@@ -351,12 +367,10 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     rm.touchRoom(roomId);
     if (!canStart) return;
 
-    // 所有人准备 → 创建引擎 → 开始第一回合
     const engine = rm.startGame(roomId);
     if (!engine) return;
     const roundData = engine.startRound();
 
-    // 给每个玩家发 game:start 含私有骰子/手牌
     room.players.forEach(p => {
       const priv = roundData.playerPrivateData.get(p.id) ?? { dice: [], hand: [] };
       io.to(p.id).emit('game:start', {
@@ -365,7 +379,6 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
         yourHand: priv.hand,
       });
     });
-    // v2.0：广播开场名言序列
     const openingQuotes: OpeningQuoteItem[] = room.players.map(p => {
       const char = findCharacter(p.characterId ?? '');
       return {
@@ -380,7 +393,6 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     io.to(roomId).emit('game:openingQuotes', openingQuotes);
     console.log(`[开局] 房间 ${roomId} 第1回合开始（模式=${room.mode}）`);
 
-    // 若第一个行动者是 AI，触发 AI
     const firstPlayer = engine.getCurrentPlayer();
     if (firstPlayer?.isAI) scheduleAIAction(roomId, 1200);
   });
@@ -399,7 +411,6 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     io.to(room.roomId).emit('game:stateUpdate', updatedView);
     console.log(`[叫牌] ${socket.id}: ${bid.quantity}个${bid.face}点`);
 
-    // 若下一玩家是 AI 则触发 AI 行动
     const next = engine.getCurrentPlayer();
     if (next?.isAI) scheduleAIAction(room.roomId);
   });
@@ -428,7 +439,6 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     const err = engine.placeBid(socket.id, data);
     if (err) { socket.emit('error', err); return; }
 
-    // 把权威手牌发回给出牌玩家（覆盖前端乐观更新，确保一致）
     const player = room.players.find(p => p.id === socket.id);
     if (player) {
       socket.emit('card:handUpdate', { hand: [...player.hand] });
@@ -463,7 +473,6 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     const engine = rm.getEngine(room.roomId);
     if (!engine) { socket.emit('error', '游戏未开始'); return; }
 
-    // 只有当前选酒玩家才能操作
     if (room.pickingPlayerId !== socket.id) {
       socket.emit('error', '还没轮到你选酒'); return;
     }
@@ -474,52 +483,23 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
       socket.emit('error', '该酒瓶已不存在或无效'); return;
     }
 
-    const drinkingLock = `drinking:${socket.id}`;
-    room.pickingPlayerId = drinkingLock;
-
     console.log(`[选酒] ${socket.id} 选了第${bottleIndex}瓶`);
 
-    // 先广播“已选瓶”，前端播放喝酒动画
+    // 广播已选瓶，前端播放喝酒动画
     io.to(room.roomId).emit('card:bottlePicked', {
       loserId: socket.id,
       loserName: loserPlayer.name,
       bottleIndex,
     });
 
-    // 动画结束后再结算
-    setTimeout(() => {
-      const latestRoom = rm.getRoom(room.roomId);
-      if (!latestRoom || latestRoom.phase !== 'punishment') return;
-      if (latestRoom.pickingPlayerId !== drinkingLock) return;
-      const latestEngine = rm.getEngine(room.roomId);
-      if (!latestEngine) return;
-
-      const cardEngine = latestEngine as CardGame;
-      const punishment = cardEngine.pickBottle(socket.id, bottleIndex);
-      if ('error' in punishment) {
-        socket.emit('error', punishment.error); return;
-      }
-
-      console.log(`[结算] ${socket.id} 第${bottleIndex}瓶，中毒=${punishment.poisoned}`);
-
-      io.to(room.roomId).emit('card:bottleResult', punishment);
-      io.to(room.roomId).emit('game:stateUpdate', rm.toPublicView(latestRoom));
-
-      const postRoom = rm.getRoom(room.roomId);
-      if (!postRoom) return;
-      if (postRoom.phase === 'gameOver') {
-        io.to(room.roomId).emit('game:over', { winner: postRoom.winner ?? '', room: rm.toPublicView(postRoom) });
-        return;
-      }
-      setTimeout(() => startNextRound(room.roomId), 3000);
-    }, 2200);
+    // 委托公共结算函数（动画 2.2s 后结算）
+    resolveBottlePick(room.roomId, socket.id, loserPlayer.name, bottleIndex);
   });
 
   // ── 房主：踢人 ──────────────────────────────────────────
   socket.on('room:kick', (data, cb) => {
     const res = rm.kickPlayer(socket.id, data.targetId);
     if (!res.success || !res.roomId) { cb({ success: false, error: res.error }); return; }
-    // 通知被踢者
     io.to(data.targetId).emit('error', '你已被房主移出房间');
     cb({ success: true });
     const room = rm.getRoom(res.roomId)!;
@@ -557,7 +537,6 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
         yourHand: priv.hand,
       });
     });
-    // v2.0：广播开场名言序列
     const hostOpeningQuotes: OpeningQuoteItem[] = res.room.players.map(p => {
       const char = findCharacter(p.characterId ?? '');
       return {
@@ -580,7 +559,6 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
   socket.on('chat:send', (data: { text: string; type: string }) => {
     const room = rm.getRoomBySocket(socket.id);
     if (!room) return;
-    // 支持玩家和观战者发言
     const player = room.players.find(p => p.id === socket.id);
     const spectator = rm.getSpectator(socket.id);
     const sender = player ?? spectator;
@@ -600,7 +578,6 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
   // ── 断线 ─────────────────────────────────────────────────
   socket.on('disconnect', (reason) => {
     console.log(`[断线] ${socket.id}，原因: ${reason}`);
-    // 如果是观战者断线，直接移除
     if (rm.isSpectator(socket.id)) {
       const { roomId: specRoomId } = rm.removeSpectator(socket.id);
       if (specRoomId) {
@@ -613,12 +590,10 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     const { roomId } = rm.markDisconnected(
       socket.id,
       (rid, _pid) => {
-        // 5秒超时：AI接管后通知房间
         const room = rm.getRoom(rid);
         if (!room) return;
         io.to(rid).emit('room:update', rm.toPublicView(room));
         console.log(`[AI接管] 玩家 ${_pid} 超时，AI接替`);
-        // 若当前轮到 AI，触发行动
         const engine = rm.getEngine(rid);
         const cur = engine?.getCurrentPlayer();
         if (cur?.isAI) scheduleAIAction(rid, 800);
@@ -631,7 +606,7 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
   });
 });
 
-// ── 全局异常捕获（防止未处理的 Promise 崩溃进程）────────
+// ── 全局异常捕获 ──────────────────────────────────────────
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err);
 });
