@@ -12,7 +12,7 @@ const MAX_PLAYERS = 4;
 const INITIAL_LIVES = 1;
 const INITIAL_DICE = 5;
 const BOTTLE_COUNT = 6;
-const RECONNECT_TIMEOUT_MS = 5000; // 5秒内可断线重连
+const RECONNECT_TIMEOUT_MS = 30000; // 30秒内可断线重连（切换网页/失去焦点不算退出）
 const AI_NAMES = ['酒仙甲', '骗子乙', '牛皮丙', '吹风丁'];
 const AI_AVATARS = ['🤖', '👺', '🎭', '🃏'];
 
@@ -203,9 +203,22 @@ export class RoomManager {
     const room = this.rooms.get(roomId);
     if (!room) return { success: false, error: '房间不存在' };
 
+    // 若 newSocketId 已被其他映射占用（重复连接），先清理旧映射
+    if (this.socketRoom.has(newSocketId) && newSocketId !== oldPlayerId) {
+      this.socketRoom.delete(newSocketId);
+    }
+
     const player = room.players.find(p => p.id === oldPlayerId);
-    if (!player) return { success: false, error: '找不到玩家记录' };
+    if (!player) return { success: false, error: '找不到玩家记录，可能已被AI接管' };
     if (player.isAI) return { success: false, error: '无法重连AI玩家' };
+
+    // 先取消断线超时（用旧 id，必须在修改 id 之前执行）
+    const timerKey = `${roomId}:${oldPlayerId}`;
+    const timer = this.reconnectTimers.get(timerKey);
+    if (timer) {
+      clearTimeout(timer);
+      this.reconnectTimers.delete(timerKey);
+    }
 
     // 更新 socket id 映射
     this.socketRoom.delete(oldPlayerId);
@@ -213,13 +226,6 @@ export class RoomManager {
     player.isConnected = true;
     player.disconnectedAt = null;
     this.socketRoom.set(newSocketId, roomId);
-
-    // 取消断线超时
-    const timer = this.reconnectTimers.get(`${roomId}:${oldPlayerId}`);
-    if (timer) {
-      clearTimeout(timer);
-      this.reconnectTimers.delete(`${roomId}:${oldPlayerId}`);
-    }
 
     return { success: true };
   }
@@ -339,29 +345,34 @@ export class RoomManager {
       player.isConnected = false;
       player.disconnectedAt = Date.now();
 
-      // 5秒后 AI 接管
+      // 超时后处理（等待阶段移除，游戏中AI接管）
+      // 超时时间足够长，避免切换标签页/失去焦点时误判为退出
       const timerKey = `${roomId}:${socketId}`;
       const timer = setTimeout(() => {
-        this.replaceWithAI(roomId, socketId);
         this.reconnectTimers.delete(timerKey);
-        onTimeout(roomId, socketId);
+        const latestRoom = this.rooms.get(roomId);
+        if (!latestRoom) return;
+        if (latestRoom.phase === 'waiting' || latestRoom.phase === 'ready') {
+          // 等待阶段超时：移除玩家
+          latestRoom.players = latestRoom.players.filter(p => p.id !== socketId);
+          this.socketRoom.delete(socketId);
+          if (latestRoom.players.length === 0) {
+            this.rooms.delete(roomId);
+          } else if (latestRoom.hostId === socketId) {
+            const next = latestRoom.players.find(p => !p.isAI);
+            if (next) latestRoom.hostId = next.id;
+          }
+        } else {
+          // 游戏中超时：AI接管
+          this.replaceWithAI(roomId, socketId);
+          onTimeout(roomId, socketId);
+        }
       }, RECONNECT_TIMEOUT_MS);
       this.reconnectTimers.set(timerKey, timer);
     }
 
-    // 等待阶段直接移除
-    if (room.phase === 'waiting') {
-      room.players = room.players.filter(p => p.id !== socketId);
-      this.socketRoom.delete(socketId);
-      if (room.players.length === 0) {
-        this.rooms.delete(roomId);
-      } else if (room.hostId === socketId) {
-        // 房主离开，转让给下一个真实玩家
-        const next = room.players.find(p => !p.isAI);
-        if (next) room.hostId = next.id;
-      }
-    } else if (room.hostId === socketId) {
-      // 游戏中房主断线，转让房主权给下一个真实在线玩家
+    // 游戏中房主断线，临时转让房主权给在线玩家
+    if (room.phase !== 'waiting' && room.phase !== 'ready' && room.hostId === socketId) {
       const next = room.players.find(p => !p.isAI && p.id !== socketId && p.isConnected);
       if (next) room.hostId = next.id;
     }

@@ -1,6 +1,6 @@
 <template>
   <div class="mobile-game-root table-scene">
-    <WinnerOverlay :show="store.winnerBanner" :winner-name="store.room?.winner??''" :rounds="store.room?.round" @close="store.winnerBanner=false" />
+    <WinnerOverlay :show="store.winnerBanner" :winner-name="store.room?.winner??''" :rounds="store.room?.round" @close="onWinnerClose" />
 
     <!-- 观战横幅 -->
     <div v-if="store.isSpectator" class="spectator-banner">
@@ -573,6 +573,14 @@ function onChallenge() {
 }
 // onCardPlay removed – replaced by onCardPlayWithRects for fly animation
 const isHost = computed(() => store.room?.hostId === store.myId);
+function onWinnerClose() {
+  // 若已有待应用的重置数据（room:restarted 在获胜画面显示期间到达），立即应用
+  if (store.pendingRestartRoom) {
+    store.applyRestarted(store.pendingRestartRoom);
+  } else {
+    store.winnerBanner = false;
+  }
+}
 function requestRestart() {
   playClickSound();
   store.restart();

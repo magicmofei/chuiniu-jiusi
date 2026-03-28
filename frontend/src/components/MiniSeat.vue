@@ -5,6 +5,10 @@
       <span v-else>{{ modelEmoji(player.characterModel) }}</span>
       <span v-if="isCurrent && !isEliminated" class="ping-dot"></span>
       <span v-if="!player.isConnected && !isEliminated" class="offline-dot"></span>
+      <!-- 断线倒计时圆环 -->
+      <span v-if="showCountdown" class="countdown-ring" :class="{ urgent: countdown <= 10 }">
+        {{ countdown }}
+      </span>
     </div>
     <div class="mini-seat__info">
       <p class="mini-seat__name">
@@ -22,6 +26,11 @@
         <span v-if="player.handCount > 0" class="stat-sep">·</span>
         <span v-if="player.handCount > 0" class="stat-item stat-hand">🃏<span class="stat-val">{{ player.handCount }}张</span></span>
       </div>
+      <!-- 断线提示条 -->
+      <div v-if="showCountdown" class="offline-bar" :class="{ urgent: countdown <= 10 }">
+        <span class="offline-bar__icon">📶</span>
+        <span class="offline-bar__text">{{ countdown }}s 后AI接管</span>
+      </div>
       <!-- 手牌扇形（top/bottom 方向宽度足够时显示）-->
       <div v-if="player.handCount > 0 && orientation !== 'left' && orientation !== 'right' && !isEliminated" class="hand-fan">
         <span
@@ -38,8 +47,79 @@
 </template>
 
 <script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import type { PlayerPublicView, CharacterModel } from '../stores/gameStore';
+
+const RECONNECT_TIMEOUT_MS = 30000; // 与后端保持一致
+
 const props = defineProps<{ player: PlayerPublicView; isMe: boolean; isCurrent: boolean; orientation?: string; bottleCount?: number; isEliminated?: boolean }>();
+
+// 断线倒计时（秒）
+const countdown = ref(0);
+let countdownTimer: ReturnType<typeof setInterval> | null = null;
+
+function updateCountdown() {
+  if (!props.player.disconnectedAt || props.player.isConnected) {
+    countdown.value = 0;
+    return;
+  }
+  const elapsed = Date.now() - props.player.disconnectedAt;
+  const remaining = Math.max(0, Math.ceil((RECONNECT_TIMEOUT_MS - elapsed) / 1000));
+  countdown.value = remaining;
+}
+
+function startCountdown() {
+  stopCountdown();
+  updateCountdown();
+  countdownTimer = setInterval(updateCountdown, 1000);
+}
+
+function stopCountdown() {
+  if (countdownTimer !== null) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+}
+
+// 当玩家断线时启动倒计时，重连时停止
+watch(
+  () => props.player.isConnected,
+  (connected) => {
+    if (!connected && props.player.disconnectedAt) {
+      startCountdown();
+    } else {
+      stopCountdown();
+      countdown.value = 0;
+    }
+  },
+  { immediate: true }
+);
+
+// disconnectedAt 发生变化时重新启动（AI接管后会清零）
+watch(
+  () => props.player.disconnectedAt,
+  (val) => {
+    if (val && !props.player.isConnected) {
+      startCountdown();
+    } else {
+      stopCountdown();
+      countdown.value = 0;
+    }
+  }
+);
+
+onMounted(() => {
+  if (!props.player.isConnected && props.player.disconnectedAt) {
+    startCountdown();
+  }
+});
+
+onUnmounted(() => stopCountdown());
+
+const showCountdown = computed(
+  () => !props.player.isConnected && !props.player.isAI && countdown.value > 0 && !props.isEliminated
+);
+
 function modelEmoji(m: CharacterModel | undefined) {
   return ({ A: '📜', B: '⚔️', C: '🏛️', D: '🌸' })[m ?? 'A'] ?? '👤';
 }
@@ -101,6 +181,65 @@ function cardStyle(i: number, total: number) {
   position: absolute; bottom: -3px; right: -3px;
   width: 7px; height: 7px;
   border-radius: 50%; background: #6b7280;
+}
+
+/* ── 断线倒计时圆环（头像右下角）── */
+.countdown-ring {
+  position: absolute;
+  bottom: -4px; right: -4px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: rgba(30,20,10,0.92);
+  border: 1.5px solid #6b7280;
+  color: #9ca3af;
+  font-size: 0.42rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  transition: border-color 0.3s, color 0.3s;
+}
+.countdown-ring.urgent {
+  border-color: #f87171;
+  color: #f87171;
+  animation: countdownUrge 0.6s ease-in-out infinite alternate;
+}
+@keyframes countdownUrge {
+  from { box-shadow: 0 0 0 0 rgba(248,113,113,0.4); }
+  to   { box-shadow: 0 0 0 4px rgba(248,113,113,0); }
+}
+
+/* ── 断线提示条（名字下方）── */
+.offline-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.52rem;
+  color: #9ca3af;
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(107,114,128,0.3);
+  border-radius: 0.2rem;
+  padding: 0.05rem 0.3rem;
+  animation: offlineFade 1.2s ease-in-out infinite alternate;
+  transition: border-color 0.3s, color 0.3s;
+}
+.offline-bar.urgent {
+  color: #f87171;
+  border-color: rgba(248,113,113,0.4);
+  background: rgba(192,57,43,0.12);
+  animation: offlineUrgent 0.5s ease-in-out infinite alternate;
+}
+.offline-bar__icon { font-size: 0.55rem; opacity: 0.7; }
+.offline-bar__text { font-weight: 700; letter-spacing: 0.02em; }
+@keyframes offlineFade {
+  from { opacity: 0.6; }
+  to   { opacity: 1; }
+}
+@keyframes offlineUrgent {
+  from { opacity: 0.75; }
+  to   { opacity: 1; filter: drop-shadow(0 0 3px rgba(248,113,113,0.5)); }
 }
 @keyframes ping {
   75%,100% { transform: scale(1.8); opacity: 0; }

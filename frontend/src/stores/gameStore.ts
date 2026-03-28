@@ -217,10 +217,37 @@ export const useGameStore = defineStore('game', () => {
     return room.value.players[room.value.currentPlayerIndex] ?? null;
   });
 
-  function _registerCommonEvents(s: Socket) {
-    // 先清除所有旧监听器，防止多次调用（重连/组件重挂）导致事件触发多次
+先清除所有旧监听器，防止多次调用（重连/组件重挂）导致事件触发多次
     s.removeAllListeners();
     s.on('disconnect', () => { connected.value = false; addLog('与服务器断开连接'); });
+    // socket.io 自动重连成功时（如切换标签页后网络恢复），重新发送 room:reconnect 握手
+    s.on('connect', () => {
+      connected.value = true;
+      const newId = s.id ?? '';
+      // 如果 myId 已有值且与新 id 不同，说明是自动重连（socket id 变了）
+      if (myId.value && newId && newId !== myId.value && roomId.value) {
+        const oldId = myId.value;
+        myId.value = newId;
+        s.emit('room:reconnect', { roomId: roomId.value, playerId: oldId }, (res: any) => {
+          if (res.success) {
+            // 更新 session 中的新 socket id
+            const raw = localStorage.getItem('chuiniu_session');
+            if (raw) {
+              try {
+                const session = JSON.parse(raw);
+                session.playerId = newId;
+                localStorage.setItem('chuiniu_session', JSON.stringify(session));
+              } catch { /* ignore */ }
+            }
+            addLog('网络恢复，已重新连接');
+          } else {
+            addLog(`自动重连失败：${res.error ?? '未知错误'}`);
+          }
+        });
+      } else if (!myId.value) {
+        myId.value = newId;
+      }
+    });
     s.on('error', (msg: string) => { errorMsg.value = msg; });
     s.on('room:update', (r: RoomPublicView) => { room.value = r; gameMode.value = r.mode; });
     s.on('game:stateUpdate', (r: RoomPublicView) => {
@@ -390,25 +417,19 @@ export const useGameStore = defineStore('game', () => {
     s.on('game:over', (data: { winner: string; room: RoomPublicView }) => {
       room.value = data.room;
       winnerBanner.value = true;
+      pendingRestartRoom.value = null; // 清除上一局残留的重置数据
       replay.finish(data.winner, data.room.round);
       replay.push('gameOver', data);
       addLog(`🏆 游戏结束！酒霸：${data.winner}`);
     });
     s.on('room:restarted', (r: RoomPublicView) => {
-      room.value = r;
-      gameMode.value = r.mode;
-      myDice.value = [];
-      myHand.value = [];
-      challengeResult.value = null;
-      showPunishment.value = false;
-      bottlePickPrompt.value = null;
-      pendingBottlePick.value = null;
-      pendingRoundStart.value = null;
-      tableCardStacks.value = [];
-      pendingOpponentPlay.value = null;
-      winnerBanner.value = false;
-      restartRequested.value = false;
-      addLog('── 新一局开始，等待豪客准备 ──');
+      // 若获胜画面还在展示，缓存重置数据，等画面关闭后再应用
+      if (winnerBanner.value) {
+        pendingRestartRoom.value = r;
+        addLog('── 新一局准备中，关闭获胜画面即可开始 ──');
+        return;
+      }
+      _applyRestarted(r);
     });
     s.on('player:left', (pid: string) => {
       const p = room.value?.players.find(p => p.id === pid);
@@ -438,8 +459,28 @@ export const useGameStore = defineStore('game', () => {
 
   // 再来一局状态
   const restartRequested = ref(false);
+  // 获胜画面关闭前收到 room:restarted 时缓存数据，等画面关闭后再应用
+  const pendingRestartRoom = ref<RoomPublicView | null>(null);
   // 最新祝酒词文字（由 toast:play 事件更新，供 PunishmentModal 同步显示）
   const latestToastText = ref('');
+
+  function _applyRestarted(r: RoomPublicView) {
+    room.value = r;
+    gameMode.value = r.mode;
+    myDice.value = [];
+    myHand.value = [];
+    challengeResult.value = null;
+    showPunishment.value = false;
+    bottlePickPrompt.value = null;
+    pendingBottlePick.value = null;
+    pendingRoundStart.value = null;
+    tableCardStacks.value = [];
+    pendingOpponentPlay.value = null;
+    winnerBanner.value = false;
+    restartRequested.value = false;
+    pendingRestartRoom.value = null;
+    addLog('── 新一局开始，等待豪客准备 ──');
+  }
 
   function spectate(name: string, avatar: string, targetRoomId: string) {
     myName.value = name; myAvatar.value = avatar; isSpectator.value = true;
@@ -596,6 +637,7 @@ export const useGameStore = defineStore('game', () => {
     chatMessages.value = []; gameLog.value = [];
     winnerBanner.value = false; isSpectator.value = false;
     pendingRoundStart.value = null;
+    pendingRestartRoom.value = null;
     tableCardStacks.value = [];
     openingQuotes.value = []; showingOpeningQuotes.value = false; selectedCharacter.value = null;
     // 清除本地 session
@@ -654,7 +696,7 @@ export const useGameStore = defineStore('game', () => {
     sendChat, reconnect, disconnect,
     clearError, closePunishment, voiceEnded, setOpeningQuote,
     kickPlayer, addAI, hostStart, restart,
-    restartRequested,
+    restartRequested, pendingRestartRoom, applyRestarted: _applyRestarted,
   };
 });
  

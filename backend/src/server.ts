@@ -58,8 +58,8 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     origin: ALLOWED_ORIGINS.includes('*') ? '*' : ALLOWED_ORIGINS,
     methods: ['GET', 'POST'],
   },
-  // 断线重连配置
-  connectionStateRecovery: { maxDisconnectionDuration: 6000 },
+  // 断线重连配置（与 rooms.ts RECONNECT_TIMEOUT_MS 保持一致）
+  connectionStateRecovery: { maxDisconnectionDuration: 30000 },
   // 限制单连接最大 payload
   maxHttpBufferSize: 1e5,
 });
@@ -68,11 +68,23 @@ const rm = new RoomManager();
 
 // ── 服务端祝酒词（平安无事时广播给所有人同步播放）────────────
 const GENERAL_TOAST_AUDIOS = Array.from({ length: 15 }, (_, i) => `/audio/toast/general_${String(i + 1).padStart(2, '0')}.mp3`);
+// 每个角色实际拥有的专属祝酒词语音条数（与 frontend/src/utils/toastQuotes.ts 保持同步）
+const CHARACTER_TOAST_COUNT: Record<string, number> = {
+  zhaokuangyin: 3, zhaopu: 2, fanzhongyan: 3, wananshi: 2,
+  simage: 2,       kouzhan: 2, baozheng: 3,   qinhui: 2,
+  yuefei: 3,       wentianxiang: 2,
+  sushi: 4,        liqingzhao: 4, liuyong: 3,  ouyangxiu: 3,
+  xinqiji: 3,      huangtingjian: 2, luyou: 3, linbu: 2,
+  zhaojizhui: 2,   zhangzeduan: 2, fankuan: 2, wangximeng: 2, mifu: 2,
+  lishishi: 3,     lianghongyu: 3, yanrui: 2,
+  jigong: 3,       hongmai: 2, chentuan: 2,
+};
+
 const CHARACTER_TOAST_AUDIO_MAP: Record<string, string[]> = {};
 for (const c of CHARACTERS) {
-  // 动态枚举：检查文件是否存在留给前端，服务端只记录可能的路径
+  const count = CHARACTER_TOAST_COUNT[c.id] ?? 0;
   const audios: string[] = [];
-  for (let i = 1; i <= 4; i++) {
+  for (let i = 1; i <= count; i++) {
     audios.push(`/audio/toast/${c.id}_${String(i).padStart(2, '0')}.mp3`);
   }
   CHARACTER_TOAST_AUDIO_MAP[c.id] = audios;
@@ -448,9 +460,19 @@ io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>)
     cb({ success: true });
 
     const room = rm.getRoom(roomId)!;
+    // 广播重连消息给房间其他人
     socket.to(roomId).emit('player:reconnected', socket.id);
+    // 推送完整房间状态给所有人
     io.to(roomId).emit('room:update', rm.toPublicView(room));
-    console.log(`[重连] ${socket.id} 重连至房间 ${roomId}`);
+
+    // 游戏进行中：把玩家私有数据（手牌）也推回给重连者
+    if (room.phase === 'bidding' || room.phase === 'punishment' || room.phase === 'result') {
+      const player = room.players.find(p => p.id === socket.id);
+      if (player) {
+        socket.emit('card:handUpdate', { hand: [...player.hand] });
+      }
+    }
+    console.log(`[重连] ${socket.id} 重连至房间 ${roomId}（phase=${room.phase}）`);
   });
 
   // ── 准备 ─────────────────────────────────────────────────

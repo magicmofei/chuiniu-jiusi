@@ -9,8 +9,10 @@ export function getSocket(): Socket {
     socket = io(BACKEND_URL, {
       autoConnect: false,
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity, // 无限重试，由游戏逻辑决定何时放弃
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 8000,
+      timeout: 20000,
     });
   }
   return socket;
@@ -27,9 +29,9 @@ export function disconnectSocket(): void {
   socket = null;
 }
 
-// 处理浏览器 bfcache（前进/后退缓存）导致的 extension port 错误
-// 当页面被放入 bfcache 时主动断开 socket，恢复时重新连接
+// 处理浏览器各类页面生命周期事件，确保 socket 连接健壮
 if (typeof window !== 'undefined') {
+  // bfcache（前进/后退缓存）：页面冻结时断开，恢复时重连
   window.addEventListener('pagehide', (event) => {
     if (event.persisted) {
       // 页面将进入 bfcache，断开 socket 避免 port 残留
@@ -37,11 +39,18 @@ if (typeof window !== 'undefined') {
     }
   });
   window.addEventListener('pageshow', (event) => {
-    if (event.persisted) {
+    if (event.persisted && socket && !socket.connected) {
       // 页面从 bfcache 恢复，若 socket 存在则重连
-      if (socket && !socket.connected) {
-        socket.connect();
-      }
+      socket.connect();
+    }
+  });
+
+  // visibilitychange：切换标签页/失去焦点不主动断开
+  // 页面重新可见时检查 socket 状态，若已断开则自动重连
+  // socket.io 的 reconnection:true 会自动重试，此处是额外兜底
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && socket && !socket.connected) {
+      socket.connect();
     }
   });
 }
