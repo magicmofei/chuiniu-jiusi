@@ -387,7 +387,6 @@ function persistentSend() {
   persistentInput.value = '';
 }
 function persistentSendEmoji(e: string) { store.sendChat(e, 'emoji'); }
-const soundEnabled  = ref(localStorage.getItem('chuiniu_sound') !== 'off');
 const showDealing   = ref(false);
 
 // ── 游戏内 BGM（喻晓庆 - 人在草木间）──────────────────────────
