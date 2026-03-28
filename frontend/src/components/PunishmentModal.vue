@@ -177,9 +177,8 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import type { ChallengeResult } from '../stores/gameStore';
 import { useGameStore } from '../stores/gameStore';
-import { playToastAudio, playChooseWineSound, playDrinkSound, playClickSound } from '../utils/useSound';
+import { playChooseWineSound, playDrinkSound, playClickSound } from '../utils/useSound';
 import { inkSplash, fireConfetti } from '../utils/useConfetti';
-import { getToastQuote } from '../utils/toastQuotes';
 
 const store = useGameStore();
 const props = defineProps<{ result: ChallengeResult }>();
@@ -188,17 +187,6 @@ const emit  = defineEmits<{ close: [] }>();
 const canClose  = ref(false);
 const toastQuote = ref('');
 const poisonQuote = ref('');
-
-// 输家角色 id，用于抽取专属祝酒词
-const loserCharacterId = computed(() => {
-  const loserId = props.result.type === 'card'
-    ? (props.result as any).loserId
-    : props.result.loserIds?.[0];
-  return store.room?.players.find(p => p.id === loserId)?.characterId ?? null;
-});
-
-// 当前祝酒词音频路径（safe 阶段播放）
-const toastAudioSrc = ref('');
 
 type Phase = 'idle'|'lift'|'drink'|'reveal'|'poisoned'|'safe';
 const phase = ref<Phase>('idle');
@@ -253,7 +241,7 @@ function runDiceAnim() {
       // 骰子 -1 但未淘汰：显示安全阶段
       phase.value = 'safe';
       toastQuote.value = `骰子 -1，剩余 ${punishment?.livesRemaining !== undefined
-        ? (result as any).room?.players?.find((p: any) => p.id === result.loserIds?.[0])?.diceCount ?? ''
+        ? (props.result as any).room?.players?.find((p: any) => p.id === props.result.loserIds?.[0])?.diceCount ?? ''
         : ''} 个`;
     }
     canClose.value = true;
