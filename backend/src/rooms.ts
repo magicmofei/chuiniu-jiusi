@@ -70,7 +70,7 @@ function createPlayer(socketId: string, name: string, avatar: string, characterI
   const resolvedChar = char ?? CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
   return {
     id: socketId,
-    name: char ? char.name : name,  // 使用角色名（若提供了 characterId）
+    name: name,  // 始终使用用户自定义名字，不被角色名覆盖
     avatar,
     isAI: false,
     isConnected: true,
@@ -160,7 +160,8 @@ export class RoomManager {
       if (room.phase !== 'waiting' && room.phase !== 'ready')
         return { success: false, error: '游戏已开始，无法加入', full: true };
       // 房间已满（无AI可替换），返回 full 标志提示可观战
-      if (room.players.length >= MAX_PLAYERS && !room.players.some(p => p.isAI))
+      const alivePlayers = room.players.filter(p => p.lives > 0);
+      if (alivePlayers.length >= MAX_PLAYERS && !alivePlayers.some(p => p.isAI))
         return { success: false, error: '房间已满，可以选择观战', full: true };
     } else {
       // 自动匹配：找同模式且有空位的等待房间
@@ -168,7 +169,7 @@ export class RoomManager {
         if (
           r.mode === mode &&
           r.phase === 'waiting' &&
-          r.players.filter(p => !p.isAI).length < MAX_PLAYERS
+          r.players.filter(p => !p.isAI && p.lives > 0).length < MAX_PLAYERS
         ) {
           room = r;
           break;

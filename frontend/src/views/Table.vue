@@ -19,7 +19,7 @@
       </div>
       <div class="top-bar__right">
         <span :style="{color:store.connected?'var(--jade)':'var(--vermillion)'}">{{ store.connected?'●':'○' }}</span>
-        <button @click="playClickSound(); soundEnabled=!soundEnabled" class="icon-btn">{{ soundEnabled?'🔊':'🔇' }}</button>
+        <button @click="toggleSound()" class="icon-btn">{{ soundEnabled?'🔊':'🔇' }}</button>
         <button v-if="store.phase!=='gameOver' && store.phase!=='waiting'" @click="playClickSound(); confirmLeave()" class="leave-btn">离开</button>
       </div>
     </header>
@@ -29,7 +29,7 @@
 
       <!-- 上方对面玩家 -->
       <div class="seat-top" ref="seatTopRef">
-        <MiniSeat v-if="seats.top" :player="seats.top" :is-me="seats.top.id===store.myId" :is-current="isCurrentPlayer(seats.top.id)" orientation="top" :bottle-count="store.room?.bottleRemaining?.[seats.top.id]" />
+        <MiniSeat v-if="seats.top" :player="seats.top" :is-me="seats.top.id===store.myId" :is-current="isCurrentPlayer(seats.top.id)" orientation="top" :bottle-count="store.room?.bottleRemaining?.[seats.top.id]" :is-eliminated="store.room?.eliminatedPlayerIds.includes(seats.top.id)" />
         <div v-else class="empty-seat empty-seat--top">🪑</div>
       </div>
 
@@ -38,7 +38,7 @@
 
         <!-- 左侧玩家 -->
         <div class="seat-left" ref="seatLeftRef">
-          <MiniSeat v-if="seats.left" :player="seats.left" :is-me="seats.left.id===store.myId" :is-current="isCurrentPlayer(seats.left.id)" orientation="left" :bottle-count="store.room?.bottleRemaining?.[seats.left.id]" />
+          <MiniSeat v-if="seats.left" :player="seats.left" :is-me="seats.left.id===store.myId" :is-current="isCurrentPlayer(seats.left.id)" orientation="left" :bottle-count="store.room?.bottleRemaining?.[seats.left.id]" :is-eliminated="store.room?.eliminatedPlayerIds.includes(seats.left.id)" />
           <div v-else class="empty-seat empty-seat--side">🪑</div>
         </div>
 
@@ -106,14 +106,14 @@
 
         <!-- 右侧玩家 -->
         <div class="seat-right" ref="seatRightRef">
-          <MiniSeat v-if="seats.right" :player="seats.right" :is-me="seats.right.id===store.myId" :is-current="isCurrentPlayer(seats.right.id)" orientation="right" :bottle-count="store.room?.bottleRemaining?.[seats.right.id]" />
+          <MiniSeat v-if="seats.right" :player="seats.right" :is-me="seats.right.id===store.myId" :is-current="isCurrentPlayer(seats.right.id)" orientation="right" :bottle-count="store.room?.bottleRemaining?.[seats.right.id]" :is-eliminated="store.room?.eliminatedPlayerIds.includes(seats.right.id)" />
           <div v-else class="empty-seat empty-seat--side">🪑</div>
         </div>
       </div>
 
       <!-- 下方自己 -->
       <div class="seat-bottom" ref="seatBottomRef">
-        <MiniSeat v-if="seats.bottom" :player="seats.bottom" :is-me="seats.bottom.id===store.myId" :is-current="isCurrentPlayer(seats.bottom.id)" orientation="bottom" :bottle-count="store.room?.bottleRemaining?.[seats.bottom.id]" />
+        <MiniSeat v-if="seats.bottom" :player="seats.bottom" :is-me="seats.bottom.id===store.myId" :is-current="isCurrentPlayer(seats.bottom.id)" orientation="bottom" :bottle-count="store.room?.bottleRemaining?.[seats.bottom.id]" :is-eliminated="store.room?.eliminatedPlayerIds.includes(seats.bottom.id)" />
         <div v-else class="empty-seat empty-seat--bottom">🪑</div>
       </div>
 
@@ -234,7 +234,7 @@ import DealingOverlay from '../components/DealingOverlay.vue';
 import { replay } from '../utils/ReplayRecorder';
 import { inkSplash } from '../utils/useConfetti';
 import { preloadToastAudio } from '../utils/toastQuotes';
-import { playClickSound } from '../utils/useSound';
+import { playClickSound, isMuted, toggleMute } from '../utils/useSound';
 
 interface FlyingCard {
   id: number;
@@ -250,6 +250,18 @@ const store  = useGameStore();
 
 const persistentInput = ref('');
 const persistentEmojis = ['😂','🤣','😤','🤡','💀','🍶','👀','🫣','😱','🎉'];
+
+// ── 静音：同步全局 useSound 状态 ───────────────────────────
+const soundEnabled = ref(!isMuted());
+function toggleSound() {
+  soundEnabled.value = !toggleMute(); // toggleMute 返回 isMuted 的新值（true=静音）
+  // BGM 跟随静音状态
+  if (soundEnabled.value) {
+    startGameBgm();
+  } else {
+    stopGameBgm();
+  }
+}
 
 // ── 飞牌动画 ────────────────────────────────────────────────
 const tableAreaRef = ref<InstanceType<typeof TableArea> | null>(null);
@@ -430,9 +442,8 @@ watch(() => store.isMyTurn, (isMyTurn) => {
   if (soundEnabled.value) playClickSound();
 });
 
+// soundEnabled 仅控制BGM（音效已由 useSound.ts 全局 _muted 管理）
 watch(soundEnabled, v => {
-  localStorage.setItem('chuiniu_sound', v ? 'on' : 'off');
-  // 静音时暂停游戏BGM，开启时若BGM已启动则恢复播放
   if (!v) {
     gameBgm?.pause();
   } else if (gameBgmStarted && gameBgm?.paused) {
@@ -489,11 +500,31 @@ const seats = computed<{ top: PlayerPublicView|null; left: PlayerPublicView|null
     };
   }
   const get = (offset: number) => players[(myIdx + offset) % players.length] ?? null;
+  const count = players.length;
+  if (count === 2) {
+    // 2人：对手放正对面（top），左右空置
+    return {
+      bottom: get(0),
+      top:    get(1),
+      right:  null,
+      left:   null,
+    };
+  }
+  if (count === 3) {
+    // 3人：对手在top和right
+    return {
+      bottom: get(0),
+      right:  get(1),
+      top:    get(2),
+      left:   null,
+    };
+  }
+  // 4人
   return {
     bottom: get(0),
     right:  get(1),
-    top:    players.length >= 3 ? get(2) : null,
-    left:   players.length >= 4 ? get(3) : null,
+    top:    get(2),
+    left:   get(3),
   };
 });
 
@@ -840,6 +871,14 @@ onMounted(() => {
 .action-panel {
   flex-shrink: 0;
   padding: 0 0.5rem 0.3rem;
+  position: relative;
+}
+.action-panel::before {
+  content: '';
+  display: block;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(212,168,67,0.3) 30%, rgba(212,168,67,0.3) 70%, transparent);
+  margin-bottom: 0.35rem;
 }
 .spectator-waiting { text-align: center; font-size: 0.68rem; opacity: 0.4; letter-spacing: 0.12em; padding: 0.5rem 0; }
 

@@ -296,6 +296,8 @@ export interface ServerToClientEvents {
   'card:handUpdate': (data: { hand: CardValue[] }) => void;
   'card:bottlePicked': (data: { loserId: string; loserName: string; bottleIndex: number }) => void;
   'card:bottleResult': (punishment: BottlePunishment) => void;
+  /** 祝酒词同步播放：所有玩家收到后播放同一条音频 */
+  'toast:play': (data: { audioSrc: string; text: string; playerName: string }) => void;
   'chat:message': (msg: {
     id: string; playerId: string; playerName: string; avatar: string;
     text: string; time: number; type: 'chat' | 'emoji' | 'system';

@@ -51,10 +51,14 @@ export class CardGame extends GameEngine {
     const targetCard = CARD_VALUES[this.secureRandInt(0, CARD_VALUES.length - 1)];
     this.room.targetCard = targetCard;
 
-    // 从完整牌组洗牌，给每位玩家各发 5 张
+    // 从完整牌组洗牌，给每位存活玩家各发 5 张
     const deck = this.shuffle(makeFullDeck());
     let deckIdx = 0;
     this.room.players.forEach(p => {
+      if (p.lives <= 0) {
+        p.hand = []; // 已淘汰玩家无手牌
+        return;
+      }
       p.hand = deck.slice(deckIdx, deckIdx + HAND_SIZE);
       deckIdx += HAND_SIZE;
       // 极端情况牌不够时，再抽一副补齐
@@ -76,6 +80,14 @@ export class CardGame extends GameEngine {
     if (this.room.currentPlayerIndex >= playerCount) {
       this.room.currentPlayerIndex = 0;
     }
+    // 若当前玩家已淘汰，找下一个存活玩家
+    for (let i = 0; i < playerCount; i++) {
+      const p = this.room.players[(this.room.currentPlayerIndex + i) % playerCount];
+      if (p && p.lives > 0) {
+        this.room.currentPlayerIndex = (this.room.currentPlayerIndex + i) % playerCount;
+        break;
+      }
+    }
     this.room.phase = 'bidding';
 
     const privateData = new Map<string, { dice: DiceFace[]; hand: CardValue[] }>();
@@ -93,6 +105,7 @@ export class CardGame extends GameEngine {
 
     const currentPlayer = this.getCurrentPlayer();
     if (!currentPlayer || currentPlayer.id !== playerId) return '还没轮到你出牌';
+    if (currentPlayer.lives <= 0) return '你已淘汰，无法出牌';
     if (!Array.isArray(cards) || cards.length < 1 || cards.length > MAX_PLAY)
       return `每次须出 1 到 ${MAX_PLAY} 张牌`;
 
@@ -216,16 +229,17 @@ export class CardGame extends GameEngine {
 
     if (!isGameOver) {
       this.room.phase = 'result';
-      // 输家成为下一回合第一个出牌者；若已被淘汰则让下一个存活者先手
+      // 输家（含已淘汰）的下一个存活玩家先手
       const loserIdx = this.room.players.findIndex(p => p.id === playerId);
-      if (loserIdx >= 0) {
-        this.room.currentPlayerIndex = loserIdx;
-      } else {
-        // 输家已被淘汰，currentPlayerIndex 保持原值并做越界保护
-        if (this.room.currentPlayerIndex >= this.room.players.length) {
-          this.room.currentPlayerIndex = 0;
-        }
+      const startIdx = loserIdx >= 0 ? loserIdx : this.room.currentPlayerIndex;
+      const total = this.room.players.length;
+      // 找到从 startIdx 开始（含自身）的第一个存活玩家
+      let nextIdx = startIdx;
+      for (let i = 0; i < total; i++) {
+        const candidate = this.room.players[(startIdx + i) % total];
+        if (candidate.lives > 0) { nextIdx = (startIdx + i) % total; break; }
       }
+      this.room.currentPlayerIndex = nextIdx;
     }
 
     return punishment;

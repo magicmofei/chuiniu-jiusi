@@ -421,10 +421,25 @@ export const useGameStore = defineStore('game', () => {
       chatMessages.value.push(msg);
       if (chatMessages.value.length > 100) chatMessages.value.shift();
     });
+    // 祝酒词同步播放（所有玩家收到后同步播放同一条音频）
+    s.on('toast:play', (data: { audioSrc: string; text: string; playerName: string }) => {
+      latestToastText.value = `「${data.text}」`;
+      addLog(`🍶 ${data.playerName}：${data.text}`);
+      import('../utils/useSound').then(({ playToastAudio, isMuted }) => {
+        if (!isMuted()) {
+          voicePlaying.value = true;
+          playToastAudio(data.audioSrc).then(() => {
+            voiceEnded();
+          });
+        }
+      });
+    });
   }
 
   // 再来一局状态
   const restartRequested = ref(false);
+  // 最新祝酒词文字（由 toast:play 事件更新，供 PunishmentModal 同步显示）
+  const latestToastText = ref('');
 
   function spectate(name: string, avatar: string, targetRoomId: string) {
     myName.value = name; myAvatar.value = avatar; isSpectator.value = true;
@@ -632,6 +647,7 @@ export const useGameStore = defineStore('game', () => {
     selectedCharacter, openingQuotes, showingOpeningQuotes, currentQuoteIndex,
     tableCardStacks,
     voicePlaying,
+    latestToastText,
     selectCharacter, nextOpeningQuote, skipOpeningQuotes,
     connect, spectate, ready,
     diceBid, diceChallenge, cardPlay, cardChallenge, pickBottle,

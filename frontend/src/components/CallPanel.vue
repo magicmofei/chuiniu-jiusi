@@ -41,7 +41,7 @@
         >{{ q.label }}</button>
       </div>
       <div class="flex gap-3">
-        <button @click="playClickSound(); submitDiceBid()" class="btn-gold flex-1">喊话！</button>
+        <button @click="playClickSound(); submitDiceBid()" class="bid-submit-btn flex-1">喊话！</button>
         <ChallengeButton :disabled="!currentBid" @challenge="emit('challenge')" />
       </div>
     </div>
@@ -148,5 +148,34 @@ function submitDiceBid() {
 @keyframes dotPulse {
   0%,100% { transform: scale(1); opacity: 0.8; }
   50%      { transform: scale(1.5); opacity: 1; }
+}
+
+/* 喊话按钮：比 btn-gold 更突出 */
+.bid-submit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1.2rem;
+  border-radius: 0.5rem;
+  border: 2px solid rgba(212,168,67,0.8);
+  color: #0a0804;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  cursor: pointer;
+  background: linear-gradient(135deg, #d4a843 0%, #f0c84a 50%, #c8961e 100%);
+  box-shadow: 0 2px 12px rgba(212,168,67,0.45), inset 0 1px 0 rgba(255,255,255,0.2);
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: all 0.18s;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.2);
+}
+.bid-submit-btn:hover {
+  background: linear-gradient(135deg, #e0b850 0%, #ffd85a 50%, #d4a030 100%);
+  box-shadow: 0 4px 18px rgba(212,168,67,0.65), inset 0 1px 0 rgba(255,255,255,0.25);
+  transform: translateY(-1px);
+}
+.bid-submit-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 6px rgba(212,168,67,0.3);
 }
 </style>

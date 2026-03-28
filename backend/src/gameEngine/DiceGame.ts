@@ -28,13 +28,27 @@ export class DiceGame extends GameEngine {
     this.room.round += 1;
 
     // 服务端用 crypto.randomInt 安全摇骰，客户端只收到自己的数据
+    // 只给存活玩家（lives > 0）摇骰
     this.room.players.forEach(p => {
-      p.dice = this.rollDice(p.diceCount);
+      if (p.lives > 0) {
+        p.dice = this.rollDice(p.diceCount);
+      } else {
+        p.dice = []; // 已淘汰玩家无骰子
+      }
     });
 
-    // 修正越界（上一轮输家先手，由 challenge() 已设置好 currentPlayerIndex）
-    if (this.room.currentPlayerIndex >= this.room.players.length) {
+    // 修正越界并跳过已淘汰玩家
+    const total = this.room.players.length;
+    if (this.room.currentPlayerIndex >= total) {
       this.room.currentPlayerIndex = 0;
+    }
+    // 若当前玩家已淘汰，找下一个存活玩家
+    for (let i = 0; i < total; i++) {
+      const p = this.room.players[(this.room.currentPlayerIndex + i) % total];
+      if (p && p.lives > 0) {
+        this.room.currentPlayerIndex = (this.room.currentPlayerIndex + i) % total;
+        break;
+      }
     }
 
     // 短暂 rolling 后切 bidding（前端动画完后再切，此处直接切）
@@ -42,7 +56,8 @@ export class DiceGame extends GameEngine {
 
     const privateData = new Map<string, { dice: number[]; hand: CardValue[] }>();
     this.room.players.forEach(p => {
-      privateData.set(p.id, { dice: [...p.dice], hand: [] });
+      // 已淘汰玩家发空骰子
+      privateData.set(p.id, { dice: p.lives > 0 ? [...p.dice] : [], hand: [] });
     });
 
     return { room: this.toPublicView(), playerPrivateData: privateData };
@@ -93,11 +108,16 @@ export class DiceGame extends GameEngine {
     const bid = this.room.currentDiceBid;
 
     // ── 服务端统计全员骰子（1点万能，不公开给客户端直到质疑触发）
+    // 只统计存活玩家（lives > 0）的骰子
     let actualCount = 0;
     const allDice = this.room.players.map(p => {
-      const matching = p.dice.filter(d => d === bid.face || d === 1).length;
-      actualCount += matching;
-      return { playerId: p.id, playerName: p.name, dice: [...p.dice] };
+      if (p.lives > 0) {
+        const matching = p.dice.filter(d => d === bid.face || d === 1).length;
+        actualCount += matching;
+        return { playerId: p.id, playerName: p.name, dice: [...p.dice] };
+      }
+      // 已淘汰玩家显示空骰子（不参与计数）
+      return { playerId: p.id, playerName: p.name, dice: [] };
     });
 
     // 叫牌成功 = 实际数 >= 喊的数（挑战者输，饮蒙汗药）
@@ -119,19 +139,19 @@ export class DiceGame extends GameEngine {
     const isGameOver = this.checkGameOver();
     if (!isGameOver) {
       this.room.phase = 'result';
-      // 输家先手：若已被淘汰，则找质疑者的位置（质疑者继续先手）
+      // 输家先手（包括已淘汰情况，advancePlayer会跳过lives=0的玩家）
       const loserIndex = this.room.players.findIndex(p => p.id === loserId);
-      if (loserIndex >= 0) {
-        this.room.currentPlayerIndex = loserIndex;
-      } else {
-        // 输家已被淘汰，让质疑者（或其后面第一个存活玩家）先手
-        const challengerIndex = this.room.players.findIndex(p => p.id === challengerId);
-        this.room.currentPlayerIndex = challengerIndex >= 0 ? challengerIndex : 0;
+      const startIdx = loserIndex >= 0 ? loserIndex : (
+        this.room.players.findIndex(p => p.id === challengerId)
+      );
+      const total = this.room.players.length;
+      // 从 startIdx 找第一个存活玩家（含自身）
+      let nextIdx = startIdx >= 0 ? startIdx : 0;
+      for (let i = 0; i < total; i++) {
+        const candidate = this.room.players[(startIdx + i) % total];
+        if (candidate && candidate.lives > 0) { nextIdx = (startIdx + i) % total; break; }
       }
-      // 越界保护
-      if (this.room.currentPlayerIndex >= this.room.players.length) {
-        this.room.currentPlayerIndex = 0;
-      }
+      this.room.currentPlayerIndex = nextIdx;
     }
 
     const result: DiceChallengeResult = {

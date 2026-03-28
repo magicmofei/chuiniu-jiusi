@@ -16,6 +16,11 @@
       <div class="candle-flicker text-6xl mb-2 inline-block">🕯️</div>
       <h1 class="text-5xl font-bold tracking-[0.25em]" style="color:var(--gold);text-shadow:0 0 40px rgba(212,168,67,0.6)">吹牛酒肆</h1>
       <p class="mt-2 text-xs tracking-[0.3em] opacity-50">汴京酒楼版 · 宋代历史人物</p>
+      <button
+        @click="toggleSound()"
+        class="mt-3 text-xs px-3 py-1 rounded-full border transition-all"
+        style="border-color:rgba(255,255,255,0.15);color:rgba(255,255,255,0.4)"
+      >{{ soundMuted ? '🔇 静音中' : '🔊 音效开' }}</button>
     </div>
     <transition name="fade" mode="out-in">
       <div v-if="!store.roomId" key="form" class="card-ink p-7 w-full max-w-sm">
@@ -101,6 +106,20 @@
           <button v-if="!store.me?.isReady" @click="playClickSound(); store.ready()" class="btn-gold px-12">准备开局</button>
           <p v-else class="text-sm tracking-widest" style="color:var(--jade)">✓ 已准备，候客中...</p>
         </div>
+
+        <!-- 等待室聊天区 -->
+        <div class="lobby-chat" style="margin-top:1rem;">
+          <div class="lobby-chat__log" ref="lobbyChatLogRef">
+            <div v-for="msg in lobbyChatMsgs" :key="msg.id" class="lobby-chat__entry" :class="msg.playerId===store.myId ? 'lobby-chat__entry--self' : ''">
+              <span class="lobby-chat__name">{{ msg.playerName }}：</span><span>{{ msg.text }}</span>
+            </div>
+            <div v-if="!lobbyChatMsgs.length" class="lobby-chat__empty">— 候场闲聊 —</div>
+          </div>
+          <div class="lobby-chat__input-row">
+            <input v-model="lobbyChatInput" @keyup.enter="sendLobbyChat" maxlength="60" placeholder="说点什么…" class="lobby-chat__input" />
+            <button @click="playClickSound(); sendLobbyChat()" class="btn-gold" style="padding:0.3rem 0.8rem;font-size:0.75rem">发</button>
+          </div>
+        </div>
       </div>
     </transition>
     <p class="mt-8 text-xs opacity-10 tracking-widest">宋·汴京酒楼 · 四人联机 · v2.0</p>
@@ -158,7 +177,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore, type GameMode, type HistoricalCharacter, type CharacterModel, CHARACTERS } from '../stores/gameStore';
 import CharacterSelectPanel from '../components/CharacterSelectPanel.vue';
-import { playClickSound } from '../utils/useSound';
+import { playClickSound, isMuted, toggleMute } from '../utils/useSound';
 
 const router = useRouter();
 const store  = useGameStore();
@@ -170,14 +189,21 @@ const joining      = ref(false);
 const copied       = ref(false);
 const showCharPanel = ref(false);
 
+// ── 静音状态 ────────────────────────────────────────────────
+const soundMuted = ref(isMuted());
+function toggleSound() {
+  soundMuted.value = toggleMute();
+}
+
 // 若尚未选角色，自动随机分配一个
 onMounted(() => {
   if (!store.selectedCharacter) {
     const random = CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
     store.selectCharacter(random);
-    name.value = random.name;
+    // 仅在用户未填写名字时才使用角色名作为默认值
+    if (!name.value.trim()) name.value = random.name;
   } else {
-    name.value = store.selectedCharacter.name;
+    if (!name.value.trim()) name.value = store.selectedCharacter.name;
   }
 });
 
@@ -237,7 +263,11 @@ function modelEmoji(model: CharacterModel | undefined) {
 
 function onCharSelect(char: HistoricalCharacter) {
   store.selectCharacter(char);
-  name.value = char.name;
+  // 只有当前名字是默认角色名或空时才更新，保留用户自定义名字
+  const prevChar = CHARACTERS.find(c => c.name === name.value);
+  if (!name.value.trim() || prevChar) {
+    name.value = char.name;
+  }
 }
 
 function getPlayer(i: number) { return store.room?.players[i] ?? null; }
@@ -278,6 +308,23 @@ function backToHome() {
   store.disconnect();
 }
 
+// ── 等待室聊天 ────────────────────────────────────────────────
+const lobbyChatInput = ref('');
+const lobbyChatLogRef = ref<HTMLElement | null>(null);
+const lobbyChatMsgs = computed(() =>
+  store.chatMessages.filter(m => m.type === 'chat' || m.type === 'emoji').slice(-30)
+);
+function sendLobbyChat() {
+  if (!lobbyChatInput.value.trim()) return;
+  store.sendChat(lobbyChatInput.value.trim());
+  lobbyChatInput.value = '';
+}
+import { nextTick } from 'vue';
+watch(() => lobbyChatMsgs.value.length, async () => {
+  await nextTick();
+  if (lobbyChatLogRef.value) lobbyChatLogRef.value.scrollTop = lobbyChatLogRef.value.scrollHeight;
+});
+
 watch(() => store.phase, (p) => {
   if (p === 'bidding' || p === 'rolling') router.push('/table');
 });
@@ -287,6 +334,62 @@ watch(() => store.phase, (p) => {
 .fade-enter-active, .fade-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .fade-enter-from { opacity:0; transform: translateY(8px); }
 .fade-leave-to   { opacity:0; transform: translateY(-8px); }
+
+/* ── 等待室聊天 ── */
+.lobby-chat {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(212,168,67,0.12);
+  border-radius: 0.6rem;
+  overflow: hidden;
+}
+.lobby-chat__log {
+  height: 100px;
+  overflow-y: auto;
+  padding: 0.4rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212,168,67,0.15) transparent;
+}
+.lobby-chat__entry {
+  font-size: 0.7rem;
+  color: rgba(212,168,67,0.7);
+  line-height: 1.4;
+}
+.lobby-chat__entry--self {
+  color: rgba(240,200,74,0.9);
+  font-weight: 600;
+}
+.lobby-chat__name {
+  opacity: 0.6;
+  font-size: 0.65rem;
+}
+.lobby-chat__empty {
+  text-align: center;
+  font-size: 0.62rem;
+  opacity: 0.2;
+  letter-spacing: 0.12em;
+  margin-top: 0.5rem;
+}
+.lobby-chat__input-row {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.3rem 0.5rem;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+.lobby-chat__input {
+  flex: 1;
+  padding: 0.28rem 0.5rem;
+  border-radius: 0.4rem;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.07);
+  color: var(--parchment);
+  font-size: 0.72rem;
+  font-family: inherit;
+  outline: none;
+}
+.lobby-chat__input:focus { border-color: rgba(212,168,67,0.35); }
 
 /* ── 封面背景图 ──────────────────────────────────────── */
 .lobby-cover-bg {

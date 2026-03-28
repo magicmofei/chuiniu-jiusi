@@ -59,6 +59,11 @@
                   : ' 骰子剩余 ' + result.room.players.find(p => p.id === result.loserIds[0])?.diceCount + ' 个' }}
               </p>
             </div>
+            <div v-else-if="activePhase==='safe'" key="p5" class="stage-inner">
+              <div class="emoji-wrap emoji-lg anim-safe">😤</div>
+              <p class="stage-label c-gold">骰子 -1，继续！</p>
+              <p class="stage-sub">{{ loserName }} 骰子剩余 {{ result.room.players.find(p => p.id === result.loserIds[0])?.diceCount }} 个</p>
+            </div>
           </transition>
         </div>
       </template>
@@ -66,6 +71,26 @@
       <!-- ══ 牌模式：选酒瓶 ══ -->
       <template v-else-if="result.type==='card'">
         <p class="pop-hint">{{ loserName }} 须从自己的酒瓶中选一瓶喝下</p>
+
+        <!-- 亮牌区：显示被质疑玩家实际打出的牌 -->
+        <div class="card-reveal-zone">
+          <p class="card-reveal-label">
+            {{ result.bidderName }} 实际出的牌
+            <span class="card-reveal-claim">（声称 {{ result.bid.quantity }} 张 {{ result.bid.targetCard }}）</span>
+          </p>
+          <div class="card-reveal-row">
+            <span
+              v-for="(card, i) in result.bid.actualCards"
+              :key="i"
+              class="card-chip"
+              :class="card === result.bid.targetCard || card === 'Joker' ? 'card-chip--match' : 'card-chip--fake'"
+            >{{ card }}</span>
+          </div>
+          <p class="card-reveal-verdict">
+            <span v-if="result.bidSuccess" class="c-jade">✓ 全是目标牌，叫牌成真！</span>
+            <span v-else class="c-red">✗ 有假牌混入，吹牛败露！</span>
+          </p>
+        </div>
 
         <!-- 等待选瓶阶段 -->
         <div v-if="bottlePhase==='waiting'" class="bottle-waiting">
@@ -212,13 +237,25 @@ function tryClose() { if (canClose.value) emit('close'); }
 
 // ── 骰子模式动画 ──────────────────────────────────────────
 function runDiceAnim() {
-  // 骰子模式：每次受罚都喝蒙汗药（骰子 -1），livesLost>0 代表骰子归零扣命/淘汰
+  const punishment = dicePunishment.value;
+  const isEliminated = punishment?.eliminated ?? false;
+  const livesLost = punishment?.livesLost ?? 0;
+  // livesLost > 0 = 骰子归零扣命（真正中毒淘汰），否则只是骰子 -1
+  const isPoisoned = livesLost > 0 || isEliminated;
+
   setTimeout(() => { phase.value = 'lift'; },  400);
   setTimeout(() => { phase.value = 'drink'; playDrinkSound(); }, 1100);
   setTimeout(async () => {
-    // 骰子模式每次受罚必然喝下蒙汗药（骰子-1），始终显示惩罚动画
-    phase.value = 'poisoned';
-    inkSplash();
+    if (isPoisoned) {
+      phase.value = 'poisoned';
+      inkSplash();
+    } else {
+      // 骰子 -1 但未淘汰：显示安全阶段
+      phase.value = 'safe';
+      toastQuote.value = `骰子 -1，剩余 ${punishment?.livesRemaining !== undefined
+        ? (result as any).room?.players?.find((p: any) => p.id === result.loserIds?.[0])?.diceCount ?? ''
+        : ''} 个`;
+    }
     canClose.value = true;
   }, 2000);
 }
@@ -265,20 +302,35 @@ function startDrinkAnim(poi: boolean | null) {
   }, 2000);
 }
 
+// ── 接收 toast:play 广播的祝酒词文字（所有客户端同步显示）────
+const syncedToastUnwatch = store.$subscribe((_m, state) => {
+  if (phase.value === 'safe' && state.latestToastText) {
+    toastQuote.value = state.latestToastText;
+  }
+});
+onUnmounted(() => syncedToastUnwatch());
+
 async function showFinalResult(poi: boolean) {
   phase.value = poi ? 'poisoned' : 'safe';
   if (poi) {
     inkSplash();
     canClose.value = true;
   } else {
-    const q = getToastQuote(loserCharacterId.value);
-    toastQuote.value = q.text;
-    toastAudioSrc.value = q.audio;
+    // 先显示已有的祝酒词（若 toast:play 比 bottleResult 先到）
+    toastQuote.value = store.latestToastText || '🍶 举杯——';
     fireConfetti();
-    store.voicePlaying = true;
-    await playToastAudio(q.audio);
-    store.voiceEnded();
-    canClose.value = true;
+    canClose.value = false;
+    const waitStart = Date.now();
+    // 等一帧让 voicePlaying 有机会变 true（toast:play 事件可能稍迟）
+    await new Promise(r => setTimeout(r, 300));
+    const checkClose = setInterval(() => {
+      // 更新显示文字（处理 toast:play 晚到的情况）
+      if (store.latestToastText) toastQuote.value = store.latestToastText;
+      if (!store.voicePlaying || Date.now() - waitStart > 8000) {
+        clearInterval(checkClose);
+        canClose.value = true;
+      }
+    }, 200);
   }
 }
 
@@ -703,5 +755,66 @@ onUnmounted(() => {});
 }
 .btn-continue:not(:disabled):hover { background:rgba(212,168,67,.15); border-color:#d4a843; }
 .btn-continue:disabled { opacity:0.4; cursor:not-allowed; }
+
+/* ══ 亮牌区 ══ */
+.card-reveal-zone {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(212,168,67,0.2);
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.6rem;
+  text-align: center;
+}
+.card-reveal-label {
+  font-size: 0.68rem;
+  opacity: 0.55;
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.06em;
+}
+.card-reveal-claim {
+  opacity: 0.7;
+  font-style: italic;
+}
+.card-reveal-row {
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+.card-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  border: 1.5px solid;
+  animation: chipPop 0.35s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+.card-chip--match {
+  color: #4ade80;
+  border-color: rgba(74,222,128,0.5);
+  background: rgba(74,222,128,0.1);
+  text-shadow: 0 0 6px rgba(74,222,128,0.4);
+}
+.card-chip--fake {
+  color: #f87171;
+  border-color: rgba(248,113,113,0.5);
+  background: rgba(248,113,113,0.1);
+  text-shadow: 0 0 6px rgba(248,113,113,0.4);
+}
+@keyframes chipPop {
+  0%   { opacity:0; transform: scale(0.5) translateY(6px); }
+  100% { opacity:1; transform: scale(1) translateY(0); }
+}
+.card-reveal-verdict {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
 </style>
  

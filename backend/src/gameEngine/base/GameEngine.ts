@@ -91,11 +91,17 @@ export abstract class GameEngine {
     return this.room.players[this.room.currentPlayerIndex] ?? null;
   }
 
-  /** 移动到下一个存活玩家 */
+  /** 移动到下一个存活玩家（跳过已淘汰的，即 lives <= 0） */
   protected advancePlayer(): void {
     const total = this.room.players.length;
     if (total === 0) return;
-    this.room.currentPlayerIndex = (this.room.currentPlayerIndex + 1) % total;
+    let next = (this.room.currentPlayerIndex + 1) % total;
+    // 最多循环 total 次防止死循环（全部淘汰时不会发生，checkGameOver 会先终止）
+    for (let i = 0; i < total; i++) {
+      if (this.room.players[next].lives > 0) break;
+      next = (next + 1) % total;
+    }
+    this.room.currentPlayerIndex = next;
   }
 
   /** 用 crypto 安全随机整数 [min, max] */
@@ -111,6 +117,7 @@ export abstract class GameEngine {
 
   /** 检查并更新游戏是否结束，返回是否结束 */
   protected checkGameOver(): boolean {
+    // 只统计 lives > 0 的存活玩家（eliminateDead 不再移除，需用 lives 判断）
     const alive = this.room.players.filter(p => p.lives > 0);
     if (alive.length <= 1) {
       this.room.phase = 'gameOver';
@@ -120,11 +127,18 @@ export abstract class GameEngine {
     return false;
   }
 
-  /** 淘汰生命值归零的玩家（移出 players 列表，加入 eliminatedPlayerIds） */
+  /** 淘汰生命值归零的玩家（保留在 players 列表，只标记 eliminatedPlayerIds）
+   * 保留在列表中是为了：① 聊天消息能查到玩家名字 ② 座位布局不塌缩
+   * toPublicView / checkGameOver 依赖 lives > 0 来判断存活，不依赖是否在数组中
+   */
   protected eliminateDead(): void {
-    const dead = this.room.players.filter(p => p.lives <= 0);
-    dead.forEach(p => this.room.eliminatedPlayerIds.push(p.id));
-    this.room.players = this.room.players.filter(p => p.lives > 0);
+    const newlyDead = this.room.players.filter(
+      p => p.lives <= 0 && !this.room.eliminatedPlayerIds.includes(p.id)
+    );
+    newlyDead.forEach(p => {
+      this.room.eliminatedPlayerIds.push(p.id);
+    });
+    // 不再从 players 数组移除，保留其位置供聊天/座位展示使用
   }
 
   getRoom(): Room { return this.room; }

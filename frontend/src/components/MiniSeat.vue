@@ -1,16 +1,19 @@
 <template>
-  <div class="mini-seat" :class="[isCurrent && 'mini-seat--active', isMe && 'mini-seat--me', orientation]">
+  <div class="mini-seat" :class="[isCurrent && 'mini-seat--active', isMe && 'mini-seat--me', orientation, isEliminated && 'mini-seat--eliminated']">
     <div class="mini-seat__avatar" :class="'model-' + (player.characterModel ?? 'A')">
-      {{ modelEmoji(player.characterModel) }}
-      <span v-if="isCurrent" class="ping-dot"></span>
-      <span v-if="!player.isConnected" class="offline-dot"></span>
+      <span v-if="isEliminated" class="eliminated-icon">😵</span>
+      <span v-else>{{ modelEmoji(player.characterModel) }}</span>
+      <span v-if="isCurrent && !isEliminated" class="ping-dot"></span>
+      <span v-if="!player.isConnected && !isEliminated" class="offline-dot"></span>
     </div>
     <div class="mini-seat__info">
       <p class="mini-seat__name">
         {{ player.name }}<span v-if="isMe" class="me-tag">我</span><span v-if="player.isAI" class="ai-tag">AI</span>
       </p>
+      <!-- 已淘汰：显示醉倒标签 -->
+      <div v-if="isEliminated" class="eliminated-badge">已醉倒</div>
       <!-- 统计栏：命数 · 酒瓶 · 手牌（公开信息，所有方向均显示）-->
-      <div class="mini-seat__stats">
+      <div v-else class="mini-seat__stats">
         <span class="stat-item stat-lives"><span class="stat-val">{{ player.lives }}命</span></span>
         <span class="stat-sep">·</span>
         <span class="stat-item stat-bottles" :class="{ 'stat-bottles--low': bottleCount !== undefined && bottleCount <= 2 }">
@@ -20,7 +23,7 @@
         <span v-if="player.handCount > 0" class="stat-item stat-hand">🃏<span class="stat-val">{{ player.handCount }}张</span></span>
       </div>
       <!-- 手牌扇形（top/bottom 方向宽度足够时显示）-->
-      <div v-if="player.handCount > 0 && orientation !== 'left' && orientation !== 'right'" class="hand-fan">
+      <div v-if="player.handCount > 0 && orientation !== 'left' && orientation !== 'right' && !isEliminated" class="hand-fan">
         <span
           v-for="i in Math.min(player.handCount, 7)"
           :key="i"
@@ -29,14 +32,14 @@
         ></span>
       </div>
     </div>
-    <span v-if="isCurrent" class="turn-mark">⚔</span>
-    <span v-else-if="player.isReady" class="ready-mark">✓</span>
+    <span v-if="isCurrent && !isEliminated" class="turn-mark">⚔</span>
+    <span v-else-if="player.isReady && !isEliminated" class="ready-mark">✓</span>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { PlayerPublicView, CharacterModel } from '../stores/gameStore';
-const props = defineProps<{ player: PlayerPublicView; isMe: boolean; isCurrent: boolean; orientation?: string; bottleCount?: number }>();
+const props = defineProps<{ player: PlayerPublicView; isMe: boolean; isCurrent: boolean; orientation?: string; bottleCount?: number; isEliminated?: boolean }>();
 function modelEmoji(m: CharacterModel | undefined) {
   return ({ A: '📜', B: '⚔️', C: '🏛️', D: '🌸' })[m ?? 'A'] ?? '👤';
 }
@@ -182,6 +185,40 @@ function cardStyle(i: number, total: number) {
 
 .turn-mark  { font-size: 0.75rem; color: var(--gold); flex-shrink: 0; }
 .ready-mark { font-size: 0.65rem; color: var(--jade); flex-shrink: 0; opacity: 0.7; }
+
+/* ── 已淘汰（醉倒）状态 ── */
+.mini-seat--eliminated {
+  opacity: 0.55;
+  border-color: rgba(100,60,40,0.3);
+  background: rgba(0,0,0,0.5);
+  filter: grayscale(0.4);
+}
+.eliminated-icon {
+  font-size: 1.1rem;
+  animation: drunkSway 2s ease-in-out infinite;
+  display: inline-block;
+}
+@keyframes drunkSway {
+  0%,100% { transform: rotate(-8deg); }
+  50%      { transform: rotate(8deg); }
+}
+.eliminated-badge {
+  font-size: 0.58rem;
+  color: #f87171;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  opacity: 0.85;
+  background: rgba(192,57,43,0.15);
+  border: 1px solid rgba(192,57,43,0.3);
+  border-radius: 0.25rem;
+  padding: 0.05rem 0.3rem;
+  display: inline-block;
+  animation: elimPulse 2s ease-in-out infinite alternate;
+}
+@keyframes elimPulse {
+  from { opacity: 0.6; }
+  to   { opacity: 1; }
+}
 
 /* ── 上方座位 ── */
 .top .mini-seat__name { max-width: 4.5rem; }

@@ -16,6 +16,7 @@ import {
   GameMode,
   findCharacter,
   OpeningQuoteItem,
+  CHARACTERS,
 } from './types';
 
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
@@ -65,6 +66,35 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 
 const rm = new RoomManager();
 
+// ── 服务端祝酒词（平安无事时广播给所有人同步播放）────────────
+const GENERAL_TOAST_AUDIOS = Array.from({ length: 15 }, (_, i) => `/audio/toast/general_${String(i + 1).padStart(2, '0')}.mp3`);
+const CHARACTER_TOAST_AUDIO_MAP: Record<string, string[]> = {};
+for (const c of CHARACTERS) {
+  // 动态枚举：检查文件是否存在留给前端，服务端只记录可能的路径
+  const audios: string[] = [];
+  for (let i = 1; i <= 4; i++) {
+    audios.push(`/audio/toast/${c.id}_${String(i).padStart(2, '0')}.mp3`);
+  }
+  CHARACTER_TOAST_AUDIO_MAP[c.id] = audios;
+}
+
+function pickToastAudio(characterId?: string | null): { audioSrc: string; text: string } {
+  // 50% 专属（若有），50% 通用
+  const useCharacter = characterId && Math.random() < 0.5;
+  if (useCharacter && characterId) {
+    const char = findCharacter(characterId);
+    if (char) {
+      const pool = CHARACTER_TOAST_AUDIO_MAP[characterId] ?? [];
+      if (pool.length) {
+        const src = pool[Math.floor(Math.random() * pool.length)];
+        return { audioSrc: src, text: char.quote };
+      }
+    }
+  }
+  const src = GENERAL_TOAST_AUDIOS[Math.floor(Math.random() * GENERAL_TOAST_AUDIOS.length)];
+  return { audioSrc: src, text: '平安无事，再饮一杯！' };
+}
+
 // ── 定时清理过期房间（每5分钟）────────────────────────────
 setInterval(() => {
   const cleaned = rm.cleanupStaleRooms();
@@ -97,10 +127,11 @@ app.get('/api/rooms', (_req, res) => {
       roomId: r.roomId,
       mode: r.mode,
       phase: r.phase,
-      playerCount: r.players.length,
-      realPlayerCount: r.players.filter(p => !p.isAI).length,
+      // 只计算存活玩家数（lives > 0），已淘汰玩家仍在数组但不占座
+      playerCount: r.players.filter(p => p.lives > 0).length,
+      realPlayerCount: r.players.filter(p => !p.isAI && p.lives > 0).length,
       maxPlayers: 4,
-      full: r.players.length >= 4 && !r.players.some(p => p.isAI),
+      full: r.players.filter(p => p.lives > 0).length >= 4 && !r.players.some(p => p.isAI && p.lives > 0),
       spectatorCount: r.spectators.length,
       round: r.round,
     }))
@@ -116,13 +147,14 @@ app.get('/api/rooms', (_req, res) => {
 app.get('/api/room/:roomId', (req, res) => {
   const room = rm.getRoom(req.params.roomId.toUpperCase());
   if (!room) { res.status(404).json({ error: '房间不存在' }); return; }
+  const alivePlayers = room.players.filter(p => p.lives > 0);
   res.json({
     roomId: room.roomId,
     mode: room.mode,
-    playerCount: room.players.length,
+    playerCount: alivePlayers.length,
     maxPlayers: 4,
     phase: room.phase,
-    full: room.players.length >= 4 && !room.players.some(p => p.isAI),
+    full: alivePlayers.length >= 4 && !alivePlayers.some(p => p.isAI),
     spectatorCount: room.spectators.length,
   });
 });
@@ -133,61 +165,97 @@ function aiDelay(): number {
   return 1000 + Math.floor(Math.random() * 2000);
 }
 
+// 每个房间的 AI 调度计数器，防止同一房间多个并发调度
+const aiScheduleGeneration = new Map<string, number>();
+
 function scheduleAIAction(roomId: string, delayMs?: number): void {
   const delay = delayMs ?? aiDelay();
+  // 递增该房间的调度代号，旧的调度检测到代号不符则自动放弃
+  const gen = (aiScheduleGeneration.get(roomId) ?? 0) + 1;
+  aiScheduleGeneration.set(roomId, gen);
+
   setTimeout(() => {
+    // 如果已被更新的调度取代，直接放弃
+    if (aiScheduleGeneration.get(roomId) !== gen) return;
+
     const room = rm.getRoom(roomId);
     if (!room) return;
 
-    // phase 不是 bidding 时的处理：
-    // - gameOver / waiting：终止，不再调度
-    // - 其他过渡状态（rolling/punishment/result/challenge）：稍后重试，防止卡死
+    // 游戏已结束/等待阶段：终止调度
+    if (room.phase === 'gameOver' || room.phase === 'waiting') return;
+
+    // 非 bidding 状态（过渡状态）：短暂等待后重试，最多重试3次防止无限循环
     if (room.phase !== 'bidding') {
-      if (room.phase !== 'gameOver' && room.phase !== 'waiting') {
-        setTimeout(() => scheduleAIAction(roomId), 800);
-      }
+      // 用同一 gen 重试，避免与其他调度冲突
+      const retryDelay = 800;
+      setTimeout(() => {
+        if (aiScheduleGeneration.get(roomId) !== gen) return;
+        const retryRoom = rm.getRoom(roomId);
+        if (!retryRoom || retryRoom.phase === 'gameOver' || retryRoom.phase === 'waiting') return;
+        if (retryRoom.phase !== 'bidding') {
+          // 再等一次，放弃后续（避免无限递归）
+          setTimeout(() => {
+            if (aiScheduleGeneration.get(roomId) !== gen) return;
+            const r2 = rm.getRoom(roomId);
+            if (r2?.phase === 'bidding') {
+              const e2 = rm.getEngine(roomId);
+              const cur2 = e2?.getCurrentPlayer();
+              if (cur2?.isAI) _doAIAction(roomId, gen);
+            }
+          }, 1200);
+          return;
+        }
+        _doAIAction(roomId, gen);
+      }, retryDelay);
       return;
     }
 
-    const engine = rm.getEngine(roomId);
-    if (!engine) return;
+    _doAIAction(roomId, gen);
+  }, delay);
+}
 
-    const currentPlayer = engine.getCurrentPlayer();
-    if (!currentPlayer) return;
-    if (!currentPlayer.isAI) return;
+function _doAIAction(roomId: string, gen: number): void {
+  if (aiScheduleGeneration.get(roomId) !== gen) return;
 
-    const decision = engine.aiDecide(currentPlayer.id);
+  const room = rm.getRoom(roomId);
+  if (!room || room.phase !== 'bidding') return;
 
-    if (decision.action === 'challenge') {
+  const engine = rm.getEngine(roomId);
+  if (!engine) return;
+
+  const currentPlayer = engine.getCurrentPlayer();
+  if (!currentPlayer) return;
+  if (!currentPlayer.isAI) return; // 当前玩家是真人，不需要AI行动
+
+  const decision = engine.aiDecide(currentPlayer.id);
+
+  if (decision.action === 'challenge') {
+    const res = engine.challenge(currentPlayer.id);
+    if ('error' in res) {
+      console.warn(`[AI质疑失败] ${res.error}，重新调度`);
+      scheduleAIAction(roomId, aiDelay());
+      return;
+    }
+    broadcastChallengeResult(roomId, res.result, res.playerPrivateData);
+  } else {
+    const err = engine.placeBid(currentPlayer.id, decision.data);
+    if (err) {
+      console.warn(`[AI叫牌失败] ${err}，降级质疑`);
       const res = engine.challenge(currentPlayer.id);
       if ('error' in res) {
-        console.warn(`[AI质疑失败] ${res.error}，尝试重新调度`);
-        const retryPlayer = engine.getCurrentPlayer();
-        if (retryPlayer?.isAI) scheduleAIAction(roomId, aiDelay());
+        console.warn(`[AI降级质疑失败] ${res.error}，重新调度`);
+        scheduleAIAction(roomId, aiDelay());
         return;
       }
       broadcastChallengeResult(roomId, res.result, res.playerPrivateData);
-    } else {
-      const err = engine.placeBid(currentPlayer.id, decision.data);
-      if (err) {
-        console.warn(`[AI叫牌失败] ${err}，尝试降级为质疑`);
-        const res = engine.challenge(currentPlayer.id);
-        if ('error' in res) {
-          console.warn(`[AI降级质疑也失败] ${res.error}`);
-          // 兜底重新调度，防止游戏卡死
-          scheduleAIAction(roomId, aiDelay());
-          return;
-        }
-        broadcastChallengeResult(roomId, res.result, res.playerPrivateData);
-        return;
-      }
-      const updatedRoom = rm.toPublicView(room);
-      io.to(roomId).emit('game:stateUpdate', updatedRoom);
-
-      const next = engine.getCurrentPlayer();
-      if (next?.isAI) scheduleAIAction(roomId, aiDelay());
+      return;
     }
-  }, delay);
+    const updatedRoom = rm.toPublicView(room);
+    io.to(roomId).emit('game:stateUpdate', updatedRoom);
+
+    const next = engine.getCurrentPlayer();
+    if (next?.isAI) scheduleAIAction(roomId, aiDelay());
+  }
 }
 
 // ── 结算选酒结果（人类和AI共用）────────────────────────────
@@ -214,6 +282,17 @@ function resolveBottlePick(
     io.to(roomId).emit('game:stateUpdate', rm.toPublicView(latestRoom));
 
     console.log(`[饮酒] ${loserName} 第${bottleIndex + 1}瓶，中毒=${punishment.poisoned}，剩余命=${punishment.livesRemaining}`);
+
+    // 平安无事：广播祝酒词音频让所有人同步播放
+    if (!punishment.poisoned) {
+      const loserPlayer = latestRoom.players.find(p => p.id === loserId);
+      const toast = pickToastAudio(loserPlayer?.characterId);
+      io.to(roomId).emit('toast:play', {
+        audioSrc: toast.audioSrc,
+        text: toast.text,
+        playerName: loserName,
+      });
+    }
 
     const postRoom = rm.getRoom(roomId);
     if (!postRoom) return;
