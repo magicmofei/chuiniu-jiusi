@@ -217,7 +217,8 @@ export const useGameStore = defineStore('game', () => {
     return room.value.players[room.value.currentPlayerIndex] ?? null;
   });
 
-先清除所有旧监听器，防止多次调用（重连/组件重挂）导致事件触发多次
+  function _registerCommonEvents(s: Socket) {
+    // 先清除所有旧监听器，防止多次调用（重连/组件重挂）导致事件触发多次
     s.removeAllListeners();
     s.on('disconnect', () => { connected.value = false; addLog('与服务器断开连接'); });
     // socket.io 自动重连成功时（如切换标签页后网络恢复），重新发送 room:reconnect 握手
